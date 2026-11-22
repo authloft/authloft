@@ -764,6 +764,13 @@ export const admin: typeof zhAdmin = {
   'admin.decodePurposeLogin': 'login_token (sign-in token)',
   'admin.decodePurposeSession': 'session_token (session token)',
   'admin.decodePurposeCookie': 'al_login_state (sign-in state Cookie)',
+  'admin.decodePurposeTicket':
+    'ticket (scan-QR ticket / al:ticket storage value)',
+  'admin.decodePurposeVerification': 'verification (step-up assertion)',
+  'admin.decodePurposeChallenge': 'challenge (challenge token)',
+  'admin.decodePurposeSyncPayload': 'sync_payload (multi-domain sync payload)',
+  'admin.decodePurposeOidcCode': 'oidc_code (OIDC authorization code)',
+  'admin.decodePurposeOidcSub': 'oidc_sub (OIDC pairwise sub)',
   'admin.decodeResultHint':
     'The decoded result is the token internal payload (Struct passed through as-is), for troubleshooting only; do not disclose the token or its payload.',
   'admin.decodePurposeAriaLabel': 'Decode purpose',

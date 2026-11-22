@@ -697,6 +697,12 @@ export const admin = {
   'admin.decodePurposeLogin': 'login_token（登录令牌）',
   'admin.decodePurposeSession': 'session_token（会话令牌）',
   'admin.decodePurposeCookie': 'al_login_state（登录态 Cookie）',
+  'admin.decodePurposeTicket': 'ticket（扫码票据串 / al:ticket 存储值）',
+  'admin.decodePurposeVerification': 'verification（二次验证断言）',
+  'admin.decodePurposeChallenge': 'challenge（挑战令牌）',
+  'admin.decodePurposeSyncPayload': 'sync_payload（多域名同步载荷）',
+  'admin.decodePurposeOidcCode': 'oidc_code（OIDC 授权码）',
+  'admin.decodePurposeOidcSub': 'oidc_sub（OIDC sub 密文）',
   'admin.decodeResultHint':
     '解码结果为令牌内部载荷（Struct 原样透传），仅供排障参考，请勿外泄令牌与载荷内容。',
   'admin.decodePurposeAriaLabel': '解码口径',

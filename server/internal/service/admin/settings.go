@@ -27,9 +27,8 @@
 //     repo.EventLogRepo.List（最小增量，排序口径同 user_repo
 //     orderClause）。响应投影复用 dto.AdminEventItem。
 //   - DecodeToken：排障工具（§5.6 行 1276）。purpose 取值即 security 包
-//     §11.6.1 AAD purpose 口径（login|session|cookie，零自造）；login →
-//     token.LoginTokenPayload、session → token.SessionTokenPayload，经
-//     security.Open 用装配的独立 Codec 解载荷，protojson（camelCase +
+//     §11.6.1 AAD purpose 九值封闭集（零自造），各 purpose → 对应载荷消息，
+//     经 security.Open 用装配的独立 Codec 解载荷，protojson（camelCase +
 //     EmitUnpopulated，默认：排障视图零值字段恒可见）投影在
 //     dto.AdminDecodePayload。载荷含敏感内容（session uid/sid、
 //     login_token ch 等）：本层与 handler 均不落日志、错误信息不携带
@@ -51,7 +50,9 @@ import (
 	"slices"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/token"
@@ -76,13 +77,19 @@ type EventLister interface {
 	List(ctx context.Context, q repo.EventAdminQuery) ([]model.EventLog, int64, error)
 }
 
-// TokenCodecs 三场景独立令牌编解码器（§1.4 / §11.6.1；bootstrap codecs
-// 结构体的 admin 视图）。Cookie 解 al_login_state（本实现起消费
-// token.LoginStatePayload，见 DecodeToken cookie 分支）。
+// TokenCodecs 令牌解码排障所需的编解码器（§1.4 / §11.6.1；bootstrap codecs
+// 结构体的 admin 视图）。与 bootstrap 一一对应：oidc_code 不持独立密钥，
+// 复用 Ticket codec（AAD purpose=oidc_code 隔离，bootstrap CodeIssuer 同源）；
+// oidc_sub 用确定性变体（§11.6.8）。
 type TokenCodecs struct {
-	Session *security.Codec
-	Login   *security.Codec
-	Cookie  *security.Codec
+	Session      *security.Codec
+	Login        *security.Codec
+	Ticket       *security.Codec
+	Cookie       *security.Codec
+	SyncPayload  *security.Codec
+	Challenge    *security.Codec
+	Verification *security.Codec
+	OidcSub      *security.DeterministicCodec
 }
 
 // QueueMonitor 延迟写入队列只读指标窄接口（§5.2 行 894 + GetStatus 口径）：
@@ -348,14 +355,23 @@ func (s *SettingsService) ListEvents(ctx context.Context, f EventListFilter) ([]
 }
 
 // DecodeToken（§5.6 行 1276，OUTCOME ④）：purpose 即 security 包 §11.6.1
-// AAD purpose 口径（跨 purpose 解令牌由 AAD 构造天然拒绝）。login /
-// session / cookie 分别用装配的独立 Codec 解出载荷消息（proto.Message，
-// 由 dto.AdminDecodePayload 经 protojson 转 Struct 投影）；失败（含篡改、
-// 跨 purpose、未知 kid）一律 ErrInvalidRequest → invalid_request。
+// AAD purpose 九值封闭集。各 purpose 用装配的独立 Codec 解出载荷消息
+// （proto.Message，由 dto.AdminDecodePayload 经 protojson 转 Struct 投影）；
+// 失败（含篡改、跨 purpose、未知 kid）一律 ErrInvalidRequest → invalid_request。
 //
-// cookie purpose（解 al_login_state）：载荷为
-// token.LoginStatePayload（state 带前缀 / b 场景 uid / 10 分钟 exp，后端
-// 架构 §12.4 行 1485、生成链产物），经 security.Open 具名解出投影。
+// 特例：
+//   - cookie（解 al_login_state）：载荷为 token.LoginStatePayload（state 带
+//     前缀 / b 场景 uid / 10 分钟 exp，后端架构 §12.4、生成链产物）。
+//   - ticket：同一 purpose / 密钥下有两类密文——ticket 串（TicketPayload
+//     直封）与 al:ticket 存储值（protojson → BytesValue 包封，§11.6.5）。
+//     两类明文首字段同为 wire type 2，proto 层不可分辨（BytesValue 反序列
+//     化恒成功）；可分辨点在存储值内层是 protojson 文本，故先按存储值解、
+//     内层 protojson 解析成功即 TicketResult，失败再按 ticket 串解（存储值
+//     不校验版本号，排障视图原样展示），均失败才判非法。
+//   - oidc_code：复用 Ticket codec（无独立密钥，AAD purpose 隔离，
+//     bootstrap CodeIssuer 同源）。
+//   - oidc_sub：确定性变体 OpenDeterministic（§11.6.8）。
+//
 // 错误文案固定、不携带 token 与 payload 内容；本方法任何路径不落日志。
 func (s *SettingsService) DecodeToken(purpose, tokenStr string) (proto.Message, error) {
 	// 解码失败（篡改 / 跨 purpose / 未知 kid / base64 损坏）统一转译干净
@@ -381,9 +397,50 @@ func (s *SettingsService) DecodeToken(purpose, tokenStr string) (proto.Message, 
 			return nil, ErrInvalidRequest
 		}
 		return msg, nil
+	case security.PurposeTicket:
+		if raw, rawErr := security.Open[wrapperspb.BytesValue](s.codecs.Ticket, security.PurposeTicket, tokenStr); rawErr == nil {
+			res := &token.TicketResult{}
+			if err := protojson.Unmarshal(raw.GetValue(), res); err == nil {
+				return res, nil
+			}
+		}
+		msg, err := security.Open[token.TicketPayload](s.codecs.Ticket, security.PurposeTicket, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
+	case security.PurposeChallenge:
+		msg, err := security.Open[token.ChallengeTokenPayload](s.codecs.Challenge, security.PurposeChallenge, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
+	case security.PurposeVerification:
+		msg, err := security.Open[token.VerificationTokenPayload](s.codecs.Verification, security.PurposeVerification, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
+	case security.PurposeSyncPayload:
+		msg, err := security.Open[token.SyncCookiePayload](s.codecs.SyncPayload, security.PurposeSyncPayload, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
+	case security.PurposeOidcCode:
+		msg, err := security.Open[token.OidcCodePayload](s.codecs.Ticket, security.PurposeOidcCode, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
+	case security.PurposeOidcSub:
+		msg, err := security.OpenDeterministic[token.OidcSubPayload](s.codecs.OidcSub, security.PurposeOidcSub, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
 	default:
-		// 空串、bind/ticket/sync_payload/oidc_code 等封闭集外的 DecodeToken
-		// 口径均为非法 purpose。
+		// 空串等封闭集外的 DecodeToken 口径均为非法 purpose。
 		return nil, ErrInvalidRequest
 	}
 }

@@ -3,8 +3,8 @@
 // 位 / 显式零值 / 未设置不修改 / repeated 伴生 has_* 标志与清空列表）
 // + SetMany 落库 +
 // settings_update 审计（detail 变更项解码断言）、ListEvents 透传、
-// DecodeToken login/session 正例 + 非法 / 篡改 / 跨 purpose / cookie
-// 载荷 schema 未落地失败例、GetStatus 三字段。真库 List 用例在
+// DecodeToken 九 purpose 正例 + 非法 / 篡改 / 跨 purpose 失败例、
+// GetStatus 三字段。真库 List 用例在
 // internal/repo/eventlog_repo_test.go；settings watcher 热更传播的真连
 // 用例在 internal/settings 既有测试（SetMany PUBLISH → reload 链），
 // 本处以 fake 断言写入与审计，不重复造真库 watcher 测试（既定口径）。
@@ -21,6 +21,7 @@ import (
 
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/token"
@@ -33,18 +34,38 @@ import (
 	"authloft/internal/settings"
 )
 
-// settingsTestCodec 构造 32B 单密钥 Codec（§1.4 封装；测试不读配置）。
-func settingsTestCodec(t *testing.T) *security.Codec {
-	t.Helper()
+// settingsTestKey 固定 32B 测试密钥（不读配置）。
+func settingsTestKey() []byte {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(0x60 + i)
 	}
-	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: key})
+	return key
+}
+
+// settingsTestCodec 构造 32B 单密钥 Codec（§1.4 封装）。
+func settingsTestCodec(t *testing.T) *security.Codec {
+	t.Helper()
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: settingsTestKey()})
 	if err != nil {
 		t.Fatalf("NewKeyStore: %v", err)
 	}
 	return security.NewCodec(ks)
+}
+
+// settingsTestSubCodec 同密钥的确定性变体（§11.6.8，oidc_sub 用；
+// k_enc / k_mac 派生后与随机 nonce Codec 互不干扰）。
+func settingsTestSubCodec(t *testing.T) *security.DeterministicCodec {
+	t.Helper()
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: settingsTestKey()})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	c, err := security.NewDeterministicCodec(ks)
+	if err != nil {
+		t.Fatalf("NewDeterministicCodec: %v", err)
+	}
+	return c
 }
 
 // —— fake 全家（窄接口逐一落档）——
@@ -98,12 +119,13 @@ func (f *fakeSettingsQueue) Dropped() uint64 { return f.dropped }
 func (f *fakeSettingsQueue) FlushMs() int64  { return f.flushMs }
 
 // newSettingsService 组装被测 service（codecs 全用同一 codec——Encode/Decode
-// 语义只由 purpose 决定）。
+// 语义只由 purpose 决定；oidc_sub 确定性变体由 DecodeToken 测试自带）。
 func newSettingsService(store adminsvc.SettingsStore, events adminsvc.EventLister,
 	audit adminsvc.AuditSink, codec *security.Codec, queue adminsvc.QueueMonitor,
 ) *adminsvc.SettingsService {
 	return adminsvc.NewSettingsService(store, events, audit, adminsvc.TokenCodecs{
-		Session: codec, Login: codec, Cookie: codec,
+		Session: codec, Login: codec, Ticket: codec, Cookie: codec,
+		SyncPayload: codec, Challenge: codec, Verification: codec,
 	}, queue)
 }
 
@@ -787,15 +809,17 @@ func TestSettingsServiceListEvents(t *testing.T) {
 	}
 }
 
-// TestSettingsServiceDecodeToken 三 purpose 解码（OUTCOME ④）：login /
-// session 正例（载荷字段逐项断言），非法 purpose、篡改、跨 purpose、
-// cookie（载荷 schema 未落地口径）失败例 → ErrInvalidRequest。
+// TestSettingsServiceDecodeToken 九 purpose 解码（OUTCOME ④）：正例
+// （载荷字段逐项断言），非法 purpose、篡改、跨 purpose 失败例 →
+// ErrInvalidRequest；ticket 分支兼测 ticket 串与 al:ticket 存储值两形态。
 func TestSettingsServiceDecodeToken(t *testing.T) {
-	ctx := context.Background()
 	codec := settingsTestCodec(t)
-	svc := newSettingsService(&fakeSettingsStore{snap: settings.Defaults()},
-		&fakeSettingsEvents{}, &settingsFakeAudit{}, codec, &fakeSettingsQueue{})
-	_ = ctx
+	svc := adminsvc.NewSettingsService(&fakeSettingsStore{snap: settings.Defaults()},
+		&fakeSettingsEvents{}, &settingsFakeAudit{}, adminsvc.TokenCodecs{
+			Session: codec, Login: codec, Ticket: codec, Cookie: codec,
+			SyncPayload: codec, Challenge: codec, Verification: codec,
+			OidcSub: settingsTestSubCodec(t),
+		}, &fakeSettingsQueue{})
 
 	t.Run("login 正例", func(t *testing.T) {
 		src := &token.LoginTokenPayload{
@@ -880,7 +904,7 @@ func TestSettingsServiceDecodeToken(t *testing.T) {
 	})
 
 	t.Run("非法 purpose", func(t *testing.T) {
-		for _, p := range []string{"", "bind", "ticket", "sync_payload", "oidc_code", "LOGIN"} {
+		for _, p := range []string{"", "bind", "webauthn", "LOGIN"} {
 			if _, err := svc.DecodeToken(p, "whatever"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 				t.Errorf("purpose %q 应 ErrInvalidRequest, got %v", p, err)
 			}
@@ -920,6 +944,161 @@ func TestSettingsServiceDecodeToken(t *testing.T) {
 		}
 		if _, err := svc.DecodeToken("cookie", loginTok); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("跨 purpose 应 ErrInvalidRequest, got %v", err)
+		}
+	})
+
+	t.Run("ticket 两形态", func(t *testing.T) {
+		// 形态一：ticket 串 = TicketPayload 直封（§11.6.4）。
+		tokStr, err := codec.Seal(security.PurposeTicket, &token.TicketPayload{
+			TicketId: "t-9", ProviderKey: "wechat_mp", Scene: "login", Iat: 100, Exp: 700,
+		})
+		if err != nil {
+			t.Fatalf("Seal(ticket): %v", err)
+		}
+		msg, err := svc.DecodeToken("ticket", tokStr)
+		if err != nil {
+			t.Fatalf("DecodeToken(ticket 串): %v", err)
+		}
+		tp, ok := msg.(*token.TicketPayload)
+		if !ok || tp.GetTicketId() != "t-9" || tp.GetProviderKey() != "wechat_mp" ||
+			tp.GetScene() != "login" || tp.GetIat() != 100 || tp.GetExp() != 700 {
+			t.Fatalf("ticket 串解码 = %+v", msg)
+		}
+
+		// 形态二：al:ticket 存储值 = protojson(TicketResult) → BytesValue
+		// 包封（§11.6.5，sealer 同构造）。
+		resJSON, err := protojson.Marshal(&token.TicketResult{
+			V: 1, Scene: "login", Status: "success", ProviderKey: "wechat_mp",
+			LoginResult: &token.LoginResult{BindingRequired: true},
+		})
+		if err != nil {
+			t.Fatalf("marshal ticket result: %v", err)
+		}
+		sealed, err := codec.Seal(security.PurposeTicket, &wrapperspb.BytesValue{Value: resJSON})
+		if err != nil {
+			t.Fatalf("Seal(al:ticket): %v", err)
+		}
+		msg, err = svc.DecodeToken("ticket", sealed)
+		if err != nil {
+			t.Fatalf("DecodeToken(al:ticket): %v", err)
+		}
+		res, ok := msg.(*token.TicketResult)
+		if !ok || res.GetV() != 1 || res.GetScene() != "login" || res.GetStatus() != "success" ||
+			!res.GetLoginResult().GetBindingRequired() {
+			t.Fatalf("al:ticket 存储值解码 = %+v", msg)
+		}
+
+		// 跨 purpose 失败：ticket 串按 cookie purpose 解。
+		if _, err := svc.DecodeToken("cookie", tokStr); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("跨 purpose 应 ErrInvalidRequest, got %v", err)
+		}
+	})
+
+	t.Run("challenge / verification / sync_payload 正例", func(t *testing.T) {
+		chTok, err := codec.Seal(security.PurposeChallenge, &token.ChallengeTokenPayload{
+			BizPurpose: "webauthn_enroll", SubjectKind: "uid", Subject: "42",
+			Nonce: "n1", Operation: "webauthn_register", Iat: 1, Exp: 121,
+		})
+		if err != nil {
+			t.Fatalf("Seal(challenge): %v", err)
+		}
+		msg, err := svc.DecodeToken("challenge", chTok)
+		if err != nil {
+			t.Fatalf("DecodeToken(challenge): %v", err)
+		}
+		ch, ok := msg.(*token.ChallengeTokenPayload)
+		if !ok || ch.GetBizPurpose() != "webauthn_enroll" || ch.GetSubject() != "42" ||
+			ch.GetOperation() != "webauthn_register" {
+			t.Fatalf("challenge 解码 = %+v", msg)
+		}
+
+		vTok, err := codec.Seal(security.PurposeVerification, &token.VerificationTokenPayload{
+			BizPurpose: "change_password", SubjectKind: "uid", Subject: "42",
+			Nonce: "n2", Amr: []string{"pwd", "otp"}, Iat: 1, Exp: 121,
+		})
+		if err != nil {
+			t.Fatalf("Seal(verification): %v", err)
+		}
+		msg, err = svc.DecodeToken("verification", vTok)
+		if err != nil {
+			t.Fatalf("DecodeToken(verification): %v", err)
+		}
+		vp, ok := msg.(*token.VerificationTokenPayload)
+		if !ok || vp.GetBizPurpose() != "change_password" || len(vp.GetAmr()) != 2 {
+			t.Fatalf("verification 解码 = %+v", msg)
+		}
+
+		sTok, err := codec.Seal(security.PurposeSyncPayload, &token.SyncCookiePayload{
+			CookieName: "al_session", CookieValue: "v1", CookieTtl: "600",
+			Remaining: []string{"b.example.com"}, FinalUrl: "https://b.example.com/final", Exp: 1,
+		})
+		if err != nil {
+			t.Fatalf("Seal(sync_payload): %v", err)
+		}
+		msg, err = svc.DecodeToken("sync_payload", sTok)
+		if err != nil {
+			t.Fatalf("DecodeToken(sync_payload): %v", err)
+		}
+		sp, ok := msg.(*token.SyncCookiePayload)
+		if !ok || sp.GetCookieName() != "al_session" || len(sp.GetRemaining()) != 1 {
+			t.Fatalf("sync_payload 解码 = %+v", msg)
+		}
+
+		// 跨 purpose 失败：challenge 令牌按 verification purpose 解
+		//（AAD purpose + 独立密钥双重隔离，§11.6.7）。
+		if _, err := svc.DecodeToken("verification", chTok); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("跨 purpose 应 ErrInvalidRequest, got %v", err)
+		}
+	})
+
+	t.Run("oidc_code 正例", func(t *testing.T) {
+		tokStr, err := codec.Seal(security.PurposeOidcCode, &token.OidcCodePayload{
+			ClientId: "cid", RedirectUri: "https://rp/cb", Uid: 42, Scope: "openid",
+			CodeChallenge: "cc", CodeChallengeMethod: "S256", AuthTime: 9, Iat: 10, Exp: 70,
+		})
+		if err != nil {
+			t.Fatalf("Seal(oidc_code): %v", err)
+		}
+		msg, err := svc.DecodeToken("oidc_code", tokStr)
+		if err != nil {
+			t.Fatalf("DecodeToken(oidc_code): %v", err)
+		}
+		oc, ok := msg.(*token.OidcCodePayload)
+		if !ok || oc.GetClientId() != "cid" || oc.GetUid() != 42 || oc.GetScope() != "openid" ||
+			oc.GetCodeChallengeMethod() != "S256" {
+			t.Fatalf("oidc_code 解码 = %+v", msg)
+		}
+		// oidc_code 与 ticket 共用 codec（无独立密钥）：跨 AAD purpose 不可解。
+		if _, err := svc.DecodeToken("ticket", tokStr); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("跨 purpose 应 ErrInvalidRequest, got %v", err)
+		}
+	})
+
+	t.Run("oidc_sub 正例", func(t *testing.T) {
+		subCodec := settingsTestSubCodec(t)
+		tokStr, err := subCodec.Seal(security.PurposeOidcSub, &token.OidcSubPayload{
+			ClientId: "cid", Uid: 42,
+		})
+		if err != nil {
+			t.Fatalf("Seal(oidc_sub): %v", err)
+		}
+		msg, err := svc.DecodeToken("oidc_sub", tokStr)
+		if err != nil {
+			t.Fatalf("DecodeToken(oidc_sub): %v", err)
+		}
+		sub, ok := msg.(*token.OidcSubPayload)
+		if !ok || sub.GetClientId() != "cid" || sub.GetUid() != 42 {
+			t.Fatalf("oidc_sub 解码 = %+v", msg)
+		}
+		// 同明文重签逐字节一致（确定性派生 nonce，§11.6.8）。
+		tokStr2, err := subCodec.Seal(security.PurposeOidcSub, &token.OidcSubPayload{
+			ClientId: "cid", Uid: 42,
+		})
+		if err != nil {
+			t.Fatalf("Seal(oidc_sub) 重签: %v", err)
+		}
+		if tokStr2 != tokStr {
+			t.Fatalf("oidc_sub 应确定性（同明文同密文）")
 		}
 	})
 }

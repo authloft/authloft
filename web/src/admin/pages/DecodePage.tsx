@@ -2,12 +2,12 @@
  * 解码工具页（docs/前端架构.md §6 行 525 DecodePage；docs/接口文档.md §5.6
  * 行 1289 DecodeToken）——/admin/decode。
  *
- * {token, purpose:"login"|"session"|"cookie"} → DecodeResponse.payload
+ * {token, purpose} → DecodeResponse.payload
  * （google.protobuf.Struct 原样透传，§5.6 行 1289「解码内容，排障用」——
  * 不为前台消费建模，前端不解析载荷、只展示 JSON）。口径（行 1289 +
- * 《后端架构》§11.6.1）：login 解 login_token、session 解 session_token、
- * cookie 解 al_login_state Cookie（三取值均按文档常驻选项；后端 cookie
- * 分支的解锁节奏不影响前端表单）。提交改 ahooks manual + 集中
+ * 《后端架构》§11.6.1）：purpose 取 §11.6.1 AAD purpose 九值封闭集，
+ * 与后端 security/purpose.go 逐字一致（前端不校验值域，非法值由后端
+ * invalid_request 兜底）。提交改 ahooks manual + 集中
  * onError——401 跳登录（带 returnTo）与其余错误 Toast 均由
  * requestOptions 分派（原内联分流删除，页面无自动请求）。
  *
@@ -32,13 +32,20 @@ import {
 import styles from './DecodePage.module.less';
 
 /**
- * 解码口径下拉（§5.6 行 1289 purpose 值域 login|session|cookie，文案注解取值语义）。
+ * 解码口径下拉（§5.6 行 1289 purpose 九值封闭集，文案注解取值语义；
+ * 顺序 = 既有三值在前，新增按 purpose.go 常量序）。
  * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
  */
 const PURPOSE_OPTIONS: { value: string; textKey: I18nKey }[] = [
   { value: 'login', textKey: 'admin.decodePurposeLogin' },
   { value: 'session', textKey: 'admin.decodePurposeSession' },
   { value: 'cookie', textKey: 'admin.decodePurposeCookie' },
+  { value: 'ticket', textKey: 'admin.decodePurposeTicket' },
+  { value: 'verification', textKey: 'admin.decodePurposeVerification' },
+  { value: 'challenge', textKey: 'admin.decodePurposeChallenge' },
+  { value: 'sync_payload', textKey: 'admin.decodePurposeSyncPayload' },
+  { value: 'oidc_code', textKey: 'admin.decodePurposeOidcCode' },
+  { value: 'oidc_sub', textKey: 'admin.decodePurposeOidcSub' },
 ];
 
 /** 解码工具页：token + purpose 表单 → 载荷 JSON 展示。 */
