@@ -56,7 +56,7 @@ import {
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table';
 import { useLocation } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../../shared/app-ui/dataTableLogic';
-import { CopyButton } from '../../../shared/components/CopyButton';
+import { CopyButton } from '../../../shared/app-ui/CopyButton';
 import { ProviderIcon } from '../../../shared/components/ProviderIcon';
 import { PageLayout } from '../../../shared/components/PageLayout';
 import { useRequest } from 'ahooks';

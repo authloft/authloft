@@ -22,7 +22,7 @@ import {
 import { CodeInput, pasteValue, applyChar, applyBackspace } from './CodeInput';
 import { FieldRenderer, controlKindFor, codeLengthOf } from './FieldRenderer';
 import { ErrorBanner, errorText, attemptsCount } from './ErrorBanner';
-import { CopyButton } from './CopyButton';
+import { CopyButton } from '../app-ui/CopyButton';
 import { Spinner } from './Spinner';
 import { PasswordStrengthMeter, meterRules } from './PasswordStrengthMeter';
 import {

@@ -32,7 +32,7 @@ import {
   TextArea,
   Toast,
 } from '@douyinfe/semi-ui';
-import { CopyButton } from '../../shared/components/CopyButton';
+import { CopyButton } from '../../shared/app-ui/CopyButton';
 import { PageLayout } from '../../shared/components/PageLayout';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {

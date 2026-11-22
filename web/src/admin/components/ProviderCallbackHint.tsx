@@ -20,7 +20,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import type { ReactNode } from 'react';
-import { CopyButton } from '../../shared/components/CopyButton';
+import { CopyButton } from '../../shared/app-ui/CopyButton';
 import { t } from '../../shared/i18n';
 import { OAUTH_CALLBACK_PREFIX } from '../../shared/urls';
 import styles from './ProviderCallbackHint.module.less';

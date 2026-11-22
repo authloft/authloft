@@ -13,7 +13,7 @@
  */
 import type { ReactNode } from 'react';
 import { Button, Popconfirm } from '@douyinfe/semi-ui';
-import { CopyButton } from '../../../shared/components/CopyButton';
+import { CopyButton } from '../../../shared/app-ui/CopyButton';
 import { t } from '../../../shared/i18n';
 import { formatUnixTime } from '../../api';
 import styles from './RecoveryCodePanel.module.less';
