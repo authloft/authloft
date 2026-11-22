@@ -64,8 +64,8 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/proxyclient"
 	// 注册表导入统一触发 init() 自注册：内置渠道适配器、smtp / aliyun_sms /
-	// aliyun_dm 消息 Sender、storage local 存储实现、captcha 三家校验与
-	// proxy 配置工厂在此登记（§3.1 / §12.2 / §15.1 / §15.2 / §15.3 / §15.4）。
+	// tencent_sms / aliyun_dm 消息 Sender、storage local 存储实现、captcha
+	// 三家校验与 proxy 配置工厂在此登记（§3.1 / §12.2 / §15.1 / §15.2 / §15.3 / §15.4）。
 	// blank import 覆盖是统一注册表的已知脆弱点（CODE_GUIDE §3.3）：漏
 	// import 即类型「凭空消失」，生产侧静默 provider_disabled，注册表完整性
 	// 门禁兜底。
@@ -94,6 +94,7 @@ import (
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/sms/tencent_sms"
 	_ "authloft/internal/provider/storage/local"
 	_ "authloft/internal/provider/storage/s3"
 	// wechat_mp_scan 具名导入：除 init() 自注册外，装配期还需
