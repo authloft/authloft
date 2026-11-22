@@ -15,7 +15,7 @@ export const file_api_admin_v1_tools: GenFile = /*@__PURE__*/
 
 /**
  * DecodeTokenRequest 是 AdminService/DecodeToken 的请求（§5.6：
- * {token, purpose:"login"｜"session"｜"cookie"}），排障用。
+ * {token, purpose}，purpose 值域见字段注释），排障用。
  * 消息名随方法名（§12.9「请求 XxxRequest」；pre-connect 时代按旧 URL
  * 命名 DecodeRequest，Connect 化时更名）。
  *
@@ -30,8 +30,10 @@ export type DecodeTokenRequest = Message<"api.admin.v1.DecodeTokenRequest"> & {
   token: string;
 
   /**
-   * 解码口径 login|session|cookie：cookie 解 al_login_state（《后端架构》§11.6.1 的
-   * purpose 口径）；随令牌类型演进可能新增，用 string 承载（§12.9）。
+   * 解码口径：§11.6.1 AAD purpose 九值封闭集（login|session|ticket|
+   * verification|challenge|cookie|sync_payload|oidc_code|oidc_sub）；
+   * ticket 兼收 ticket 串与 al:ticket 存储值。封闭集见 security/purpose.go，
+   * 用 string 承载（§12.9）。
    *
    * @generated from field: string purpose = 2;
    */
