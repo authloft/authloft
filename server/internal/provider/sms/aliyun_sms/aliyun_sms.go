@@ -1,8 +1,9 @@
-// 阿里云短信（dysmsapi 2017-05-25）Sender 实现（docs/后端架构.md §15.2
-// 行 1723、§3.9 行 417）：stdlib 直连 HTTP API + RPC 签名 V1.0（HMAC-SHA1），
-// 零新第三方依赖。请求 / 签名格式以阿里云公开 API（RPC 风格）为准。
+// 阿里云短信（dysmsapi 2017-05-25）Sender 实现（docs/后端架构.md §15.2、
+// §3.9）：stdlib 直连 HTTP API + RPC 签名 V1.0（HMAC-SHA1），零新第三方
+// 依赖。请求 / 签名格式以阿里云公开 API（RPC 风格）为准；签名算法经公共包
+// internal/provider/aliyunrpc（短信 / 邮件推送 / 验证码渠道共用）。
 //
-// Ext 字段口径（接口文档 §5.3 行 1236 sms 追加字段 + 凭证区，供 /schema 渲染）：
+// Ext 字段口径（接口文档 §5.3 sms 追加字段 + 凭证区，供 /schema 渲染）：
 //   - client_id     = AccessKeyId（credential，必填）
 //   - client_secret = AccessKeySecret（credential，必填；签名密钥为其值 + "&"）
 //   - sign_name     = 短信签名（credential，必填）
@@ -17,26 +18,21 @@ package aliyunsms
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/aliyunrpc"
 	"authloft/internal/provider/schemafield"
 )
 
-// Type 渠道类型（§15.2 行 1723 内置清单）。
+// Type 渠道类型（§15.2 内置清单）。
 const Type = "aliyun_sms"
 
 // defaultEndpoint 公网网关（Ext.intranet_endpoint 存在时优先回源）。
@@ -79,7 +75,7 @@ type Sender struct {
 	signName        string
 	templateCode    string // Ext.template_code 默认模板
 	metadata        map[string]string
-	nowFunc         func() time.Time // 时间源（§22.2 行 1978：可注入，缺省 time.Now）
+	nowFunc         func() time.Time // 时间源（可注入，缺省 time.Now）
 	nonceFunc       func() string    // 随机源（缺省 crypto/rand hex）
 	hc              *http.Client
 }
@@ -114,8 +110,8 @@ func build(p *provider.Provider, hc *http.Client) (*Sender, error) {
 		nowFunc:         time.Now,
 		hc:              hc,
 	}
-	// 随机源缺省走 crypto/rand（兜底时钟取注入的 nowFunc，§22.2 行 1978）。
-	s.nonceFunc = func() string { return newNonce(s.nowFunc) }
+	// 随机源缺省走 crypto/rand（兜底时钟取注入的 nowFunc）。
+	s.nonceFunc = func() string { return aliyunrpc.NewNonce(s.nowFunc) }
 	if e := strings.TrimSpace(p.Ext.GetIntranetEndpoint()); e != "" {
 		s.endpoint = e
 	}
@@ -161,7 +157,7 @@ func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[str
 	form.Set("SignName", s.signName)
 	form.Set("TemplateCode", templateCode)
 	form.Set("TemplateParam", templateParam)
-	form.Set("Signature", signRPCForm(form, s.accessKeySecret))
+	form.Set("Signature", aliyunrpc.SignRPCForm(form, s.accessKeySecret))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -197,48 +193,7 @@ func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[str
 	return nil
 }
 
-// signRPCForm 阿里云 RPC 签名 V1.0（SHA1 密钥 = AccessKeySecret + "&"）：
-// StringToSign = POST & percentEncode("/") & percentEncode(规范化查询串)；
-// 规范化串 = 除 Signature 外按 key 升序的 percentEncode(k)=percentEncode(v)。
-func signRPCForm(form url.Values, accessKeySecret string) string {
-	keys := make([]string, 0, len(form))
-	for k := range form {
-		if k == "Signature" {
-			continue
-		}
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteByte('&')
-		}
-		b.WriteString(percentEncode(k))
-		b.WriteByte('=')
-		b.WriteString(percentEncode(form.Get(k)))
-	}
-	stringToSign := http.MethodPost + "&" + percentEncode("/") + "&" + percentEncode(b.String())
-	mac := hmac.New(sha1.New, []byte(accessKeySecret+"&"))
-	mac.Write([]byte(stringToSign))
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
-}
-
-// percentEncode RFC 3986 百分号编码：url.QueryEscape 的空格转 '+' 需改回
-// %20，其余（含保留字）一致。
-func percentEncode(s string) string {
-	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
-}
-
-func newNonce(now func() time.Time) string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand 失败属系统级异常，用纳秒时钟兜底保证唯一性。
-		return fmt.Sprintf("%d", now().UnixNano())
-	}
-	return hex.EncodeToString(b)
-}
-
+// truncate 截断厂商响应原文（错误串不落全量 body，防日志膨胀）。
 func truncate(b []byte) string {
 	const max = 200
 	if len(b) > max {

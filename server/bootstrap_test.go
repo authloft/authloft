@@ -2094,6 +2094,23 @@ func TestProviderRegistryComplete(t *testing.T) {
 	}); err != nil {
 		t.Errorf("NewProxy: %v——proxy factory 槽缺失或实现构造破损", err)
 	}
+	// email Sender aliyun_dm（§15.2 / §15.5，RPC 签名公共包复用）：blank
+	// import 被删即 sender 槽缺失，发送期 provider_disabled。type 用字面量
+	// 同 s3 先例（根包测试 import 实现包会触发 init 注册，门禁恒绿）；
+	// LookupSenderMeta 断言 meta 与 category，NewSender 走真实 factory 证
+	// 构造槽挂载。
+	meta, ok := provider.LookupSenderMeta("aliyun_dm")
+	if !ok {
+		t.Error(`provider 注册表缺 email sender type "aliyun_dm"——bootstrap.go 装配 import 可能被删`)
+	} else if meta.Category != provider.CategoryEmail {
+		t.Errorf("aliyun_dm category = %q, want %q", meta.Category, provider.CategoryEmail)
+	}
+	if _, err := provider.NewSender(&provider.Provider{
+		Type: "aliyun_dm",
+		Ext:  &providerpb.Ext{ClientId: "ak", ClientSecret: "sk", From: "no-reply@example.com", AddressType: "1"},
+	}, provider.CategoryEmail); err != nil {
+		t.Errorf("NewSender(aliyun_dm): %v——sender factory 槽缺失或实现构造破损", err)
+	}
 }
 
 // allowStartGate 放行的 captcha 判定桩：OTP 下发守卫只认 Status 为空即放行，

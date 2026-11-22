@@ -16,6 +16,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/provider/aliyunrpc"
 	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -68,7 +69,7 @@ func TestBuildRequiresCredentials(t *testing.T) {
 	if s.endpoint != defaultEndpoint {
 		t.Fatalf("endpoint = %q, want default %q", s.endpoint, defaultEndpoint)
 	}
-	// intranet_endpoint 优先回源（§5.3 行 1236：服务端回源优先使用）。
+	// intranet_endpoint 优先回源（§5.3：服务端回源优先使用）。
 	s, err = build(testProvider(t, func(e *providerpb.Ext) { e.IntranetEndpoint = "http://intranet.local" }), nil)
 	if err != nil {
 		t.Fatalf("build(intranet): %v", err)
@@ -128,16 +129,15 @@ func TestSendSignsAndPostsCorrectForm(t *testing.T) {
 		t.Error("SignatureNonce is empty")
 	}
 	// 签名复算：剔除 Signature 后按同一密钥重算必须一致。
-	recomputed := signRPCForm(gotForm, testAccessKeySecret)
+	recomputed := aliyunrpc.SignRPCForm(gotForm, testAccessKeySecret)
 	if got := gotForm.Get("Signature"); got != recomputed {
 		t.Errorf("Signature = %q, want recomputed %q", got, recomputed)
 	}
 }
 
-// TestSendKnownSignatureVector 已知签名向量（§22.2 行 1978：时间源/随机源
-// 可注入）：固定 now / nonce → 固定 HMAC-SHA1 签名，逐字节比对。期望值
-// 独立于 signRPCForm 按阿里云 RPC 签名 V1.0 公开规范预计算，签名算法
-// 被改动即红。
+// TestSendKnownSignatureVector 已知签名向量（时间源/随机源可注入）：
+// 固定 now / nonce → 固定 HMAC-SHA1 签名，逐字节比对。期望值独立于签名
+// 实现按阿里云 RPC 签名 V1.0 公开规范预计算，签名算法被改动即红。
 func TestSendKnownSignatureVector(t *testing.T) {
 	fixedNow := time.Date(2026, time.November, 4, 12, 0, 0, 0, time.UTC)
 	const fixedNonce = "fixed-nonce-000"
@@ -178,7 +178,7 @@ func TestSendKnownSignatureVector(t *testing.T) {
 }
 
 // TestSendTemplateKeyOverride 模板键覆盖：metadata["template_code."+tpl]
-// 优先于 Ext.template_code（§15.2 行 1725：模板内容存 metadata）。
+// 优先于 Ext.template_code（§15.2：模板内容存 metadata）。
 func TestSendTemplateKeyOverride(t *testing.T) {
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
