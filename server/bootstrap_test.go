@@ -2046,10 +2046,12 @@ func TestProviderRegistryComplete(t *testing.T) {
 			t.Errorf("provider 注册表缺 type %q——bootstrap.go 装配 import 可能被删（在册 %v）", w, got)
 		}
 	}
-	// captcha 三家（服务型，§9.1）：blank import 被删即 meta 缺失，
+	// captcha 四家（服务型，§9.1）：blank import 被删即 meta 缺失，
 	// 第三方校验运行期 provider_disabled（gate 经 NewVerifier 分派）。
+	// capjs 字面量暂落实现子包（同 storage s3 / oss / cos 口径，根包测试
+	// 不得 import 实现包——自身 import 会触发 init 注册、使门禁恒绿）。
 	for _, typ := range []string{
-		provider.CaptchaTypeTurnstile, provider.CaptchaTypeRecaptcha, provider.CaptchaTypeHcaptcha,
+		provider.CaptchaTypeTurnstile, provider.CaptchaTypeRecaptcha, provider.CaptchaTypeHcaptcha, "capjs",
 	} {
 		meta, ok := provider.LookupTypeMeta(typ)
 		if !ok {

@@ -1,13 +1,16 @@
-// core_test.go 覆盖三家共用 siteverify 逻辑（docs/后端架构.md §9.1）：请求
-// 形态（POST + form-urlencoded + 恰好 secret/response 两字段）、success 判定
-// 与失败映射（success=false → ErrInvalid；HTTP 500 / 坏 JSON → 基础设施错误）、
+// core_test.go 覆盖共用 siteverify 逻辑（docs/后端架构.md §9.1）：请求形态
+// （POST + form-urlencoded + 恰好 secret/response 两字段）、success 判定与
+// 失败映射（success=false → ErrInvalid；HTTP 500 / 坏 JSON → 基础设施错误）、
 // endpoint 优先级（ext.endpoint > 厂商默认）、出站代理经 Outbound 池化 client
-// （§15.4）。httptest 假端点，不打真实厂商。
+// （§15.4）；另覆盖 JSON body 编码分支（capjs/capd，§15.5）及 form / JSON
+// 双分支共存互不串扰。httptest 假端点，不打真实厂商。
 package captchacore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -186,4 +189,133 @@ func mustConfig(t *testing.T, scheme, host string, port int32) proxyclient.Confi
 		t.Fatal(err)
 	}
 	return cfg
+}
+
+// jsonRecorder 断言 JSON 编码请求形态的假端点：捕获原始 body——form 分支的
+// ParseForm 对 JSON 体不生效，须读原文判形态（form 体不是合法 JSON，误走
+// form 分支时下方断言必失败，可证伪）。
+type jsonRecorder struct {
+	server *httptest.Server
+	method string
+	ctype  string
+	raw    []byte
+	status int
+	body   string
+	hits   int
+}
+
+func newJSONRecorder(t *testing.T) *jsonRecorder {
+	t.Helper()
+	rec := &jsonRecorder{status: http.StatusOK}
+	rec.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.hits++
+		rec.method = r.Method
+		rec.ctype = r.Header.Get("Content-Type")
+		raw, _ := io.ReadAll(io.LimitReader(r.Body, remoteBodyLimit))
+		rec.raw = raw
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(rec.status)
+		body := rec.body
+		if body == "" {
+			body = `{"success":true}`
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(rec.server.Close)
+	return rec
+}
+
+func newJSONVerifier(t *testing.T, endpoint string) *Verifier {
+	t.Helper()
+	p := &provider.Provider{
+		Key:  "pk",
+		Type: "capjs",
+		Ext:  &providerpb.Ext{ClientId: "site", ClientSecret: "s", Endpoint: endpoint},
+	}
+	v, err := NewJSON(p, testDefaultURL)
+	if err != nil {
+		t.Fatalf("NewJSON: %v", err)
+	}
+	return v
+}
+
+// TestCoreJSONEncoding JSON 编码分支（capjs/capd，§15.5）：请求体恰为
+// {secret, response} 两键、Content-Type application/json；success 判定与
+// 失败映射（success=false → ErrInvalid；HTTP 500 / 坏 JSON → 基础设施错误；
+// 空 token 不发请求）与 form 分支同骨架；同端点上 New 仍发 form-urlencoded
+// ——双编码分支共存且互不串扰（三家 form 行为零变化）。
+func TestCoreJSONEncoding(t *testing.T) {
+	rec := newJSONRecorder(t)
+	v := newJSONVerifier(t, rec.server.URL)
+	if err := v.Verify(context.Background(), "pk", provider.Submission{Token: "tok-1"}); err != nil {
+		t.Fatalf("JSON success=true = %v, want nil", err)
+	}
+	if rec.hits != 1 || rec.method != http.MethodPost {
+		t.Fatalf("hit=%d method=%q, want 1 次 POST", rec.hits, rec.method)
+	}
+	if rec.ctype != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", rec.ctype)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.raw, &got); err != nil {
+		t.Fatalf("请求体非合法 JSON: %v（原文 %q）", err, rec.raw)
+	}
+	if len(got) != 2 || got["secret"] != "s" || got["response"] != "tok-1" {
+		t.Errorf("JSON body = %v, want exactly {secret:s, response:tok-1}", got)
+	}
+
+	rec.body = `{"success":false}`
+	if err := newJSONVerifier(t, rec.server.URL).Verify(context.Background(), "pk", provider.Submission{Token: "t"}); !errors.Is(err, provider.ErrInvalid) {
+		t.Fatalf("JSON success=false = %v, want ErrInvalid", err)
+	}
+
+	rec.status = http.StatusInternalServerError
+	if err := newJSONVerifier(t, rec.server.URL).Verify(context.Background(), "pk", provider.Submission{Token: "t"}); err == nil || errors.Is(err, provider.ErrInvalid) {
+		t.Fatalf("JSON HTTP 500 = %v, want infra error", err)
+	}
+
+	rec.status = http.StatusOK
+	rec.body = "not-json"
+	if err := newJSONVerifier(t, rec.server.URL).Verify(context.Background(), "pk", provider.Submission{Token: "t"}); err == nil || errors.Is(err, provider.ErrInvalid) {
+		t.Fatalf("JSON 坏响应 = %v, want infra error", err)
+	}
+
+	rec2 := newJSONRecorder(t)
+	if err := newJSONVerifier(t, rec2.server.URL).Verify(context.Background(), "pk", provider.Submission{}); !errors.Is(err, provider.ErrInvalid) {
+		t.Fatalf("JSON 空 token = %v, want ErrInvalid", err)
+	}
+	if rec2.hits != 0 {
+		t.Fatalf("JSON 空 token 不应发请求, hits = %d", rec2.hits)
+	}
+
+	// 端点优先级与构造防御与 form 分支同口径：ext.endpoint 空回落默认；
+	// nil provider ext 构造失败。
+	fallback, err := NewJSON(&provider.Provider{
+		Key: "pk", Type: "capjs",
+		Ext: &providerpb.Ext{ClientId: "site", ClientSecret: "s"},
+	}, testDefaultURL)
+	if err != nil {
+		t.Fatalf("NewJSON fallback: %v", err)
+	}
+	if fallback.verifyURL != testDefaultURL {
+		t.Fatalf("JSON ext.endpoint 为空回落默认 = %q, want %q", fallback.verifyURL, testDefaultURL)
+	}
+	if _, err := NewJSON(nil, testDefaultURL); err == nil {
+		t.Fatal("JSON nil provider ext 应构造失败")
+	}
+
+	// 双分支共存：同端点上 form 构造器（三家路径）仍发 form-urlencoded，
+	// 未被 JSON 分支波及。
+	formRec := newJSONRecorder(t)
+	formV := newCore(t, formRec.server.URL, "sec-form", nil)
+	if err := formV.Verify(context.Background(), "pk", provider.Submission{Token: "tok-2"}); err != nil {
+		t.Fatalf("form 分支回归 = %v, want nil", err)
+	}
+	if formRec.ctype != "application/x-www-form-urlencoded" {
+		t.Fatalf("form 分支 Content-Type = %q, want form-urlencoded（行为零变化）", formRec.ctype)
+	}
+	formVals, err := url.ParseQuery(string(formRec.raw))
+	if err != nil || len(formVals) != 2 || formVals.Get("secret") != "sec-form" || formVals.Get("response") != "tok-2" {
+		t.Fatalf("form body = %q, want exactly {secret:sec-form, response:tok-2}", formRec.raw)
+	}
 }
