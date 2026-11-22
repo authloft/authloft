@@ -40,20 +40,21 @@ import styles from './QRCodePanel.module.less';
 
 /** poll 秒数的网络缓冲（服务端 hold 满 poll 秒后才返回，客户端超时保护放宽）。 */
 export const POLL_TIMEOUT_BUFFER_S = 5;
-/** poll 秒数默认值 = 上限（接口文档 §2.8 行 714，全文档唯一定义处）。 */
-export const MAX_POLL_SECONDS = 10;
+/** 前端默认轮询秒数（后端钳制上限 15 = 接口文档 §2.8 唯一定义；请求侧 poll 与客户端超时同源取本值）。 */
+export const DEFAULT_POLL_SECONDS = 10;
 
 /**
  * poll 秒数（调用方 props）→ 客户端单次超时 ms（useLongPoll.pollTimeoutMs）：
- * undefined / 非正 / 超上限一律按上限 15 兜底（零值兜底 + §2.8 上限）。
+ * undefined / 非正 / 超默认一律按默认 10 兜底（零值兜底；后端钳制上限 15 =
+ * §2.8，前端默认不放大到上限）。
  * 请求侧的 poll 参数由调用方在 pollUrl 里使用同一 props 值。
  */
 export function pollTimeoutMsOf(pollSeconds: number | undefined): number {
   const seconds =
     pollSeconds === undefined ||
     pollSeconds <= 0 ||
-    pollSeconds > MAX_POLL_SECONDS
-      ? MAX_POLL_SECONDS
+    pollSeconds > DEFAULT_POLL_SECONDS
+      ? DEFAULT_POLL_SECONDS
       : pollSeconds;
   return (seconds + POLL_TIMEOUT_BUFFER_S) * 1000;
 }
@@ -146,7 +147,7 @@ export interface QRPanelControllerOptions {
   requestQR(signal: AbortSignal): Promise<CreateQrcodeResponse>;
   /**
    * 轮询调用（调用方包装 GetLoginTicket / GetThirdpartyTicket；请求侧 poll
-   * 秒数由调用方使用 pollSeconds 同一值，§2.8 行 714 上限 15）。
+   * 秒数由调用方使用 pollSeconds 同一值（§2.8 口径）。
    */
   pollUrl(ticket: string, signal: AbortSignal): Promise<LoginFlowResponse>;
   /** 结果就绪（success）：整个信封交给调用方（登录读 .login、绑定读 .bind）。 */
@@ -327,6 +328,13 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
               // 在执行层兜底（script-src nonce + strict-dynamic、无 unsafe-inline）。
               dangerouslySetInnerHTML={{ __html: phase.tipHtml }}
             />
+          )}
+          {/* 手机端确认提示（errors.status.scanned）：三种码图模式一致，恢复
+              三模式重写前的旧行为（扫描完成立即反馈，§2.8 scanned 空结果）。 */}
+          {phase.ticketStatus === 'scanned' && (
+            <p className={styles.hint} role="status">
+              {t('errors.status.scanned')}
+            </p>
           )}
         </>
       )}

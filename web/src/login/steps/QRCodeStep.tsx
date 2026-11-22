@@ -7,8 +7,8 @@
  * - requestQR 调 SsoService/CreateQrcode（scene 缺省即 login，§2.8 行 702；
  *   captcha 条件必填——need_captcha=true 每轮现取新凭据，false 裸发，§2.5）；
  *   pollUrl 调 GetLoginTicket（poll 秒数与壳 pollSeconds 同值，
- *   §2.8 行 714 上限 15；signal 忽略——api 薄封装不支持中断，结果丢弃由
- *   壳 disposed 检查兜底）；
+ *   前端默认 10、后端钳制上限 15 = §2.8；signal 忽略——api 薄封装不支持中断，
+ *   结果丢弃由壳 disposed 检查兜底）；
  * - captcha 门控（§2.5 触发表第 7 行：按 provider need_captcha 分派）：true
  *   走 upfront——先在弹窗里问凭据再发一次请求；false 走 reactive——先裸发，
  *   命中 captcha_required 才弹窗（服务端 fail-closed 兜底）。
@@ -50,7 +50,7 @@ import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { StepUpDialog } from '../../shared/components/StepUpDialog';
 import { ApiError } from '../../shared/api/errors';
 import {
-  MAX_POLL_SECONDS,
+  DEFAULT_POLL_SECONDS,
   ticketPhaseOf,
 } from '../../shared/components/QRCodePanel';
 import { QRCodeDialog } from '../../shared/components/QRCodeDialog';
@@ -345,7 +345,7 @@ export interface QRCodeStepProps {
     ticket: string,
     pollSeconds?: number,
   ) => Promise<LoginFlowResponse>;
-  /** 轮询单次最长等待秒数（§2.8 行 714 上限 15；缺省 15）。 */
+  /** 轮询单次等待秒数（前端默认 10，后端钳制上限 15 = §2.8）。 */
   pollSeconds?: number;
   /** 终点跳转动作（缺省 location.replace；测试记录函数）。 */
   navigate?: (url: string) => void;
@@ -360,7 +360,7 @@ export function QRCodeStep({
   captcha = initCaptcha(),
   requestQrcode,
   pollTicket = defaultPollTicket,
-  pollSeconds = MAX_POLL_SECONDS,
+  pollSeconds = DEFAULT_POLL_SECONDS,
   navigate = defaultNavigate,
 }: QRCodeStepProps) {
   const gate = useCaptchaGate(Modal);
@@ -524,7 +524,7 @@ export function QRCodeStep({
         title={title}
         requestQR={requestQR}
         // 第二参是 AbortSignal（api 薄封装不支持中断，signal 忽略）；
-        // poll 秒数取本组件 pollSeconds，与壳 pollTimeoutMs 同值（§2.8 上限 15）。
+        // poll 秒数取本组件 pollSeconds，与壳 pollTimeoutMs 同源（§2.8 口径）。
         pollUrl={(ticket) => pollAndDetectStepUp(ticket, pollSeconds)}
         onResult={(outer) =>
           // 完整状态机分派：success 用内层信封终点跳转；

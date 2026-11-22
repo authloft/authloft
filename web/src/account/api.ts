@@ -128,7 +128,7 @@ import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
 import {
-  MAX_POLL_SECONDS,
+  DEFAULT_POLL_SECONDS,
   qrFailureText,
 } from '../shared/components/QRCodePanel';
 import { ApiError, resolveCode } from '../shared/api/errors';
@@ -852,8 +852,8 @@ export function buildUnbindThirdpartyRequest(
   return create(UnbindThirdpartyRequestSchema, { providerKey });
 }
 
-/** 扫码绑定轮询 poll 秒数 = §2.8 行 714 上限（与 QRCodePanel.MAX_POLL_SECONDS 同源）。 */
-export const THIRD_PARTY_POLL_SECONDS = MAX_POLL_SECONDS;
+/** 扫码绑定轮询 poll 秒数 = 前端默认 10（后端钳制上限 15，§2.8；与 QRCodePanel.DEFAULT_POLL_SECONDS 同源）。 */
+export const THIRD_PARTY_POLL_SECONDS = DEFAULT_POLL_SECONDS;
 
 /** GetThirdpartyTicket 请求（§3.7.1 B 行 1011-1017）：{ticket, poll}。 */
 export function buildGetThirdpartyTicketRequest(

@@ -759,12 +759,13 @@ describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文�
     ).toBe('pending');
   });
 
-  test('pollTimeoutMsOf：undefined / 非正 / 超上限 → 15 + 缓冲 5；正常值 = (s+5)*1000（§2.8 行 714 上限 15）', () => {
-    expect(pollTimeoutMsOf(undefined)).toBe(20000);
-    expect(pollTimeoutMsOf(0)).toBe(20000);
-    expect(pollTimeoutMsOf(-3)).toBe(20000);
-    expect(pollTimeoutMsOf(16)).toBe(20000);
-    expect(pollTimeoutMsOf(15)).toBe(20000);
+  test('pollTimeoutMsOf：undefined / 非正 / 超前端默认 → 10 + 缓冲 5；正常值 = (s+5)*1000（后端钳制上限 15 = §2.8，前端默认 10）', () => {
+    expect(pollTimeoutMsOf(undefined)).toBe(15000);
+    expect(pollTimeoutMsOf(0)).toBe(15000);
+    expect(pollTimeoutMsOf(-3)).toBe(15000);
+    expect(pollTimeoutMsOf(16)).toBe(15000); // 超 10 钳回默认
+    expect(pollTimeoutMsOf(15)).toBe(15000); // 后端上限之内，前端仍取默认
+    expect(pollTimeoutMsOf(10)).toBe(15000);
     expect(pollTimeoutMsOf(5)).toBe(10000);
     expect(pollTimeoutMsOf(1)).toBe(6000);
   });
