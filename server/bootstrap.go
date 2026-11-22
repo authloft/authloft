@@ -84,6 +84,7 @@ import (
 	_ "authloft/internal/provider/auth/telegram"
 	_ "authloft/internal/provider/auth/wechat"
 	_ "authloft/internal/provider/auth/wechat_mp"
+	_ "authloft/internal/provider/auth/wecom"
 	_ "authloft/internal/provider/auth/weibo"
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
