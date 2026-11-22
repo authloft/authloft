@@ -2051,7 +2051,7 @@ func TestProviderRegistryComplete(t *testing.T) {
 	// capjs 字面量暂落实现子包（同 storage s3 / oss / cos 口径，根包测试
 	// 不得 import 实现包——自身 import 会触发 init 注册、使门禁恒绿）。
 	for _, typ := range []string{
-		provider.CaptchaTypeTurnstile, provider.CaptchaTypeRecaptcha, provider.CaptchaTypeHcaptcha, "capjs",
+		provider.CaptchaTypeTurnstile, provider.CaptchaTypeRecaptcha, provider.CaptchaTypeHcaptcha, "capjs", "geetest_v4",
 	} {
 		meta, ok := provider.LookupTypeMeta(typ)
 		if !ok {
