@@ -148,7 +148,7 @@ export function QRCodeDialog(props: QRCodeDialogProps): ReactNode {
       visible
       title={props.title}
       hasCancel={false}
-      okText={t('common.close')}
+      okText={t('common.cancel')}
       closable
       closeOnEsc
       maskClosable={false}

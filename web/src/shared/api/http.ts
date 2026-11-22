@@ -189,6 +189,9 @@ function withErrorNormalization(base: Transport): Transport {
       try {
         return await base.unary(...args);
       } catch (error) {
+        // 所有 RPC 失败的唯一日志点：归一后错误不再走 requestErrorText 的非 ApiError 分支，
+        // 若不在此留痕，silent / 文案帧 / 压布尔等下游会彻底丢失根因。
+        console.error('[api] request failed', error);
         throw toApiError(error);
       }
     },

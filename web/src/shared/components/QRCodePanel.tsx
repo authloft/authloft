@@ -41,7 +41,7 @@ import styles from './QRCodePanel.module.less';
 /** poll 秒数的网络缓冲（服务端 hold 满 poll 秒后才返回，客户端超时保护放宽）。 */
 export const POLL_TIMEOUT_BUFFER_S = 5;
 /** poll 秒数默认值 = 上限（接口文档 §2.8 行 714，全文档唯一定义处）。 */
-export const MAX_POLL_SECONDS = 15;
+export const MAX_POLL_SECONDS = 10;
 
 /**
  * poll 秒数（调用方 props）→ 客户端单次超时 ms（useLongPoll.pollTimeoutMs）：
@@ -153,7 +153,7 @@ export interface QRPanelControllerOptions {
   onResult(envelope: LoginFlowResponse): void;
   /** 面板状态变化通知（组件壳绑 setState）。 */
   onPhase(phase: QRPanelPhase): void;
-  /** 轮询单次最长等待秒数（默认 15；面板生命周期内取创建时值）。 */
+  /** 轮询单次最长等待秒数（默认 10；面板生命周期内取创建时值）。 */
   pollSeconds?: number;
   /** 连续轮询错误上限（默认 useLongPoll 的 DEFAULT_MAX_POLL_ERRORS）。 */
   maxPollErrors?: number;
@@ -218,7 +218,9 @@ export function createQRPanelController(
           options.onPhase({ kind: 'failed', message: qrFailureText(envelope) });
         }
       },
-      onMaxErrors: () => {
+      onMaxErrors: (error) => {
+        // 轮询错误上限：error 不进 failed 帧（只出通用文案），根因在此留痕。
+        console.error('[qrcode] poll stopped after max errors', error);
         options.onPhase({
           kind: 'failed',
           message: t('errors.status.unknown'),
@@ -266,6 +268,8 @@ export function createQRPanelController(
             return;
           }
           fetchAbort = undefined;
+          // 拉码失败只出文案帧，error 在此留痕。
+          console.error('[qrcode] fetch qrcode failed', error);
           options.onPhase({ kind: 'failed', message: fetchFailureText(error) });
         },
       );
@@ -316,11 +320,6 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
               alt={t('common.qrCodeAlt')}
             />
           )}
-          <p className={styles.hint} role="status">
-            {phase.ticketStatus === 'scanned'
-              ? t('errors.status.scanned')
-              : t('common.qrScanPrompt')}
-          </p>
           {phase.tipHtml !== '' && (
             <div
               className={styles.tip}

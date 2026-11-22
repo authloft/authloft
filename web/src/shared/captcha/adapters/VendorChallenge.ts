@@ -155,8 +155,9 @@ export abstract class VendorChallengeAdapter<
     container.replaceChildren();
     try {
       await this.loadScript(this.scriptUrl());
-    } catch {
+    } catch (error) {
       if (epoch === this.session && this.container === container) {
+        console.error('[captcha] vendor challenge failed', error);
         this.paintError(container);
       }
       return;

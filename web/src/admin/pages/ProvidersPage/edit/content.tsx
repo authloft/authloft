@@ -247,8 +247,9 @@ export function ProviderEditContent(props: {
           if (isProviderKeyTaken(key, list.items)) {
             issues.provider_key = t('admin.providerKeyTaken');
           }
-        } catch {
-          // 预检失败不阻塞提交。
+        } catch (error) {
+          // 预检失败不阻塞提交，但需留痕——否则唯一性冲突只能等后端兜底时才发现。
+          console.error('[admin] provider key precheck failed', error);
         }
       }
     }

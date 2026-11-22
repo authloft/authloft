@@ -73,6 +73,7 @@ export async function authenticate(
     const credential = await start(challengeData);
     return { ok: true, credential };
   } catch (err) {
+    console.error('[webauthn] assertion failed', err);
     return {
       ok: false,
       cancelled: err instanceof DOMException && err.name === 'NotAllowedError',

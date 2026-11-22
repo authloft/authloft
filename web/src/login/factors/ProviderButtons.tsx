@@ -117,7 +117,8 @@ export async function startRedirect(
       (deps.save ?? saveOidcContext)(ctx);
     }
     return url;
-  } catch {
+  } catch (error) {
+    console.error('[login] authorize url fetch failed', error);
     return undefined;
   }
 }

@@ -78,7 +78,8 @@ export function loadVendorScript(
   });
   inflight.set(src, attempt);
   // 失败（含超时）→ 清缓存：下次调用重新注入（重试路径）。
-  void attempt.catch(() => {
+  void attempt.catch((error) => {
+    console.error('[captcha] vendor script load failed', error);
     if (inflight.get(src) === attempt) {
       inflight.delete(src);
     }

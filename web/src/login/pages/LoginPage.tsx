@@ -194,6 +194,7 @@ export function LoginPage({ snapshot }: LoginPageProps) {
         location.replace(url);
       });
     } catch (error) {
+      console.error('[login] consent submit failed', error);
       setErrorKey(consentErrorKey(error));
     } finally {
       setSubmitting(false);

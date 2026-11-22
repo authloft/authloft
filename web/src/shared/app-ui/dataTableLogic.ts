@@ -183,7 +183,8 @@ export async function runInlineToggle<T>(
   try {
     await persist(patched);
     return { ok: true, rows: next };
-  } catch {
+  } catch (error) {
+    console.error('[table] inline toggle persist failed', error);
     return { ok: false, rows };
   }
 }

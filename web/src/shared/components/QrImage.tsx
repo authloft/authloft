@@ -17,7 +17,7 @@ import styles from './QrImage.module.less';
 const QUIET_ZONE = 4;
 
 /** 默认渲染尺寸 px（验证器扫码的常规展示大小）。 */
-const DEFAULT_SIZE = 180;
+const DEFAULT_SIZE = 240;
 
 /** 码图 SVG 组装结果：modules = 单边模块数，path = 暗模块单路径。 */
 export interface QrSvgBuild {
@@ -54,7 +54,8 @@ export function buildQrSvg(content: string): QrSvgBuild | undefined {
       }
     }
     return { modules, path };
-  } catch {
+  } catch (error) {
+    console.error('[qrcode] build svg failed', error);
     return undefined;
   }
 }

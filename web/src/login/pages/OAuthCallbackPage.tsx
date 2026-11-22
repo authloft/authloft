@@ -172,6 +172,7 @@ export async function dispatchCallback(
       );
       deps.navigate(securityBindUrl('success'));
     } catch (error) {
+      console.error('[oauth] thirdparty bind failed', error);
       deps.navigate(securityBindUrl(bindErrorCode(error)));
     }
     return;
@@ -189,7 +190,9 @@ export async function dispatchCallback(
         deps.navigate(url);
       }
     }
-  } catch {
+  } catch (error) {
+    // onTransportError 不携带 error，根因只能在此留痕。
+    console.error('[oauth] login callback transport failed', error);
     deps.onTransportError();
   }
 }

@@ -105,6 +105,7 @@ export function SchemaForm(props: SchemaFormProps): ReactNode {
   try {
     groups = groupFieldsBySection(props.schema.fields);
   } catch (error) {
+    console.error('[admin] schema section grouping failed', error);
     sectionError = error instanceof Error ? error.message : String(error);
   }
   if (sectionError !== null || groups === null) {

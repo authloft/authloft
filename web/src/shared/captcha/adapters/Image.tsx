@@ -97,10 +97,11 @@ export class ImageCaptchaAdapter implements CaptchaAdapter {
       this.currentId = response.id ?? '';
       this.failures = 0;
       this.paintReady(container, response.imageBase64 ?? '');
-    } catch {
+    } catch (error) {
       if (session !== this.session || this.container !== container) {
         return;
       }
+      console.error('[captcha] image challenge load failed', error);
       this.currentId = '';
       this.input = null;
       this.failures += 1;

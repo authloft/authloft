@@ -37,7 +37,6 @@ export const zhCN = {
   'common.pwdNotSameAsIdentifier': '不能与用户名或邮箱相同',
   'common.qrFetching': '正在获取二维码…',
   'common.qrCodeAlt': '扫码二维码',
-  'common.qrScanPrompt': '请使用手机扫码',
   'common.providerIconAlt': '渠道图标',
   'common.refreshAndRetry': '请刷新重试',
   'common.captchaLoadFailed': '验证码加载失败',

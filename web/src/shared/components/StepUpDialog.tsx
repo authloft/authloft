@@ -74,8 +74,7 @@ let CaptchaDialogImpl: ComponentType<CaptchaDialogProps> | undefined;
 let captchaDialogChunk: Promise<void> | undefined;
 
 function useCaptchaDialogComponent():
-  | ComponentType<CaptchaDialogProps>
-  | undefined {
+  ComponentType<CaptchaDialogProps> | undefined {
   const [, loaded] = useState(0);
   useEffect(() => {
     if (CaptchaDialogImpl !== undefined) {
@@ -229,11 +228,12 @@ export interface StepUpAuthenticateDeps {
 
 /** 断言结果：ok=false 时 cancelled 区分用户取消与失败（错误语义独立）。 */
 export type StepUpAuthResult =
-  | { ok: true; credential: JsonObject }
-  | { ok: false; cancelled: boolean };
+  { ok: true; credential: JsonObject } | { ok: false; cancelled: boolean };
 
 /** 缺省发起：@simplewebauthn/browser startAuthentication（浏览器原生 UI）。 */
-async function defaultStepUpStart(optionsJSON: JsonObject): Promise<JsonObject> {
+async function defaultStepUpStart(
+  optionsJSON: JsonObject,
+): Promise<JsonObject> {
   const assertion: AuthenticationResponseJSON = await startAuthentication({
     optionsJSON:
       optionsJSON as unknown as PublicKeyCredentialRequestOptionsJSON,
@@ -257,6 +257,7 @@ export async function stepUpAuthenticate(
     const credential = await start(challengeData);
     return { ok: true, credential };
   } catch (err) {
+    console.error('[webauthn] step-up assertion failed', err);
     return {
       ok: false,
       cancelled: err instanceof DOMException && err.name === 'NotAllowedError',
@@ -469,6 +470,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
       );
       setPhase('verify');
     } catch (error) {
+      console.error('[stepup] load methods failed', error);
       setMessage(stepUpErrorText(error));
       setPhase('error');
     }
@@ -514,6 +516,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
         );
         setPhase('verify');
       } catch (error) {
+        console.error('[stepup] challenge start failed', error);
         setActiveMethod(entry);
         setMessage(stepUpErrorText(error));
         setPhase('error');
@@ -549,6 +552,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
         }
         await onVerified(token);
       } catch (error) {
+        console.error('[stepup] factor submit failed', error);
         setMessage(stepUpErrorText(error));
       } finally {
         setBusy(false);
@@ -573,9 +577,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
       if (!result.ok) {
         setMessage(
           t(
-            result.cancelled
-              ? 'login.passkeyCancelled'
-              : 'login.passkeyFailed',
+            result.cancelled ? 'login.passkeyCancelled' : 'login.passkeyFailed',
           ),
         );
         return;

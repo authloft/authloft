@@ -74,7 +74,10 @@ export class RecaptchaAdapter extends VendorChallengeAdapter<GrecaptchaApi> {
       vendor
         .execute(this.siteKey, { action: RECAPTCHA_ACTION })
         .then((token) => this.acceptToken(epoch, token))
-        .catch(() => this.rejectChallenge(epoch));
+        .catch((error) => {
+          console.error('[captcha] recaptcha execute failed', error);
+          this.rejectChallenge(epoch);
+        });
     });
   }
 
