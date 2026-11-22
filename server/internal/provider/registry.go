@@ -57,9 +57,15 @@ type Meta struct {
 	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 无声明
 	// CSPSources captcha 类型子包注册时按指令分组的 CSP 源声明（§9.4：
 	// 声明随实现走，Catalog.CSP() 经注册表聚合输出，禁按 type / 厂商名
-	// 特判；指令限接口文档 §8 白名单四项 frame-src / connect-src /
-	// style-src / img-src）。nil = 不贡献源。
+	// 特判；指令限接口文档 §8 白名单五项 frame-src / connect-src /
+	// style-src / img-src / worker-src）。nil = 不贡献源。
 	CSPSources map[string][]string
+	// CSPSourcesOf 按行派生的 CSP 源声明（§9.4「按行配置派生源」）：capjs
+	// 一类自托管域名不可枚举、静态登记表达不了，由实现按当前生效 Provider
+	// 实例（行 Ext 配置）现算返回，与静态 CSPSources 同一白名单过滤、
+	// 去重与聚合口径（静态在前）。nil = 无按行派生源，既有静态路径
+	// 现行为不变。
+	CSPSourcesOf func(*Provider) map[string][]string
 }
 
 // entry 注册表条目：meta 恒有，factory 槽按注册来源挂零或一个（同一 type
