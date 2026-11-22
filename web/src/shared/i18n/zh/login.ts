@@ -80,14 +80,18 @@ export const login = {
   'login.passkeyVerify': '重新验证',
   'login.passkeyCancelled': '已取消通行密钥验证',
   'login.passkeyFailed': '通行密钥验证失败，请重试',
-  // 第三方跳转失败文案带 provider 展示名。
-  'login.oauthRedirectFailed': '无法跳转 {provider}，请重试',
+  // 第三方跳转失败（retry 入口 = 图标墙重选，不点名 provider）。
+  'login.oauthRedirectFailed': '出错了，请重试',
+  // 第三方跳转中（pending 帧，带 provider 展示名）。
+  'login.redirectingTo': '即将前往 {provider} 进行授权，请稍候',
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': '请先完成人机校验',
   // 扫码登录弹窗兜底标题：Provider 展示名缺失 / 空串时取用。
   'login.qrDialogTitle': '扫码登录',
   'login.fetchQrcodeAction': '获取二维码',
+  // 跳转中兜底文案（StepDispatcher 防御帧无 provider 名时用；主链路取
+  // redirectingTo）。
   'login.redirectInProgress': '正在跳转…',
   'login.initMissing': '初始化数据缺失，请刷新重试',
   'login.routeNotFound': '页面不存在',

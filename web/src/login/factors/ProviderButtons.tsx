@@ -127,17 +127,17 @@ export async function startRedirect(
 // 组件（图标墙 + 分派状态编排）
 // ---------------------------------------------------------------------------
 
-/** redirect 分派三态：pending（取 URL 在途）/ ready（URL 就绪，跳转）/ failed（携带 providerKey 供失败帧文案）。 */
+/** redirect 分派三态：pending（取 URL 在途，带 provider 展示名供跳转文案）/ ready（URL 就绪，跳转）/ failed（图标墙保留可重点 = 重试入口）。 */
 type RedirectState =
-  | { phase: 'pending' }
+  | { phase: 'pending'; providerName: string }
   | { phase: 'ready'; url: string }
-  | { phase: 'failed'; providerKey: string };
+  | { phase: 'failed' };
 
 /**
- * 失败帧展示名：快照 displayName 优先，缺省 / 未知 key
- * 回显 providerKey（§9 第 18 条零值兜底，与图标墙按钮文案同款取舍）。纯函数。
+ * 展示名兜底：快照 displayName 优先，缺省 / 未知 key 回显 providerKey（§9 第
+ * 18 条零值兜底，与图标墙按钮 title 同款取舍）。纯函数。
  */
-export function providerDisplayName(
+function providerDisplayName(
   providers: SnapshotProvider[],
   providerKey: string,
 ): string {
@@ -193,15 +193,16 @@ export function ProviderButtons({
 
   /** redirect 渠道点击：取 authorize_url → RedirectStep 跳转（§4.3 行 454）。 */
   const pickRedirect = (providerKey: string) => {
-    setRedirect({ phase: 'pending' });
+    setRedirect({
+      phase: 'pending',
+      providerName: providerDisplayName(providers, providerKey),
+    });
     void startRedirect(
       providerKey,
       request === undefined ? {} : { request },
     ).then((url) => {
       setRedirect(
-        url === undefined
-          ? { phase: 'failed', providerKey }
-          : { phase: 'ready', url },
+        url === undefined ? { phase: 'failed' } : { phase: 'ready', url },
       );
     });
   };
@@ -225,20 +226,18 @@ export function ProviderButtons({
     }
   };
 
-  // redirect 分派三态：ready / pending 走 RedirectStep（「正在跳转…」；ready
-  // 携 URL 由 effect 执行 location.replace）；failed 恢复图标墙可重点。
+  // redirect 分派三态：ready / pending 走 RedirectStep（pending 带 provider
+  // 展示名；ready 携 URL 由 effect 执行 location.replace）；failed 文案不点名
+  // provider（重试入口 = 图标墙重选），图标墙保留可重点。
   if (redirect !== undefined) {
     if (redirect.phase === 'ready') {
       return <RedirectStep authorizeUrl={redirect.url} navigate={navigate} />;
     }
     if (redirect.phase === 'failed') {
-      // 失败文案带 provider 展示名；图标墙保留可重点。
       return (
         <>
           <p role="alert" className={styles.error}>
-            {t('login.oauthRedirectFailed', {
-              provider: providerDisplayName(providers, redirect.providerKey),
-            })}
+            {t('login.oauthRedirectFailed')}
           </p>
           <ProviderWall
             providers={providers}
@@ -249,7 +248,9 @@ export function ProviderButtons({
       );
     }
     // pending：空 authorizeUrl 的 RedirectStep（仅展示文案，effect 不跳转）。
-    return <RedirectStep navigate={navigate} />;
+    return (
+      <RedirectStep providerName={redirect.providerName} navigate={navigate} />
+    );
   }
 
   // JSX 组件变量须大写开头（小写会被解析为字符串标签）。

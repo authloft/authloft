@@ -171,7 +171,7 @@ describe('FormStep（kind=form 通用渲染，§4.2 行 424；totp 渲染落点 
 // ---------------------------------------------------------------------------
 
 describe('RedirectStep（§4.2 行 442）', () => {
-  test('展示「正在跳转…」+ Spinner（加载视觉；effect 跳转在 node 静态渲染不执行，副作用经 runRedirect 覆盖）', () => {
+  test('无 provider 名（防御帧）→ 兜底文案「正在跳转…」+ Spinner', () => {
     const markup = renderToStaticMarkup(
       createElement(RedirectStep, {
         authorizeUrl: 'https://auth.example/authorize',
@@ -179,6 +179,19 @@ describe('RedirectStep（§4.2 行 442）', () => {
     );
     expect(markup).toContain('正在跳转');
     expect(markup).toContain('aria-label="加载中…"'); // Spinner md
+  });
+
+  test('pending 帧（providerName 在场）→ 「即将前往 {provider} 进行授权」', () => {
+    const markup = renderToStaticMarkup(
+      createElement(RedirectStep, {
+        authorizeUrl: 'https://auth.example/authorize',
+        providerName: '企业SSO',
+      }),
+    );
+    expect(markup).toContain('即将前往 企业SSO 进行授权，请稍候');
+    expect(markup).not.toContain('正在跳转');
+    // 居中样式（Spinner 与文案垂直居中、整行水平居中）在 RedirectStep.module.less，
+    // node 静态渲染不产出 CSS 内容，视觉经浏览器核对。
   });
 
   test('runRedirect：空 URL 不跳（零值兜底，§9 第 18 条）；非空跳一次', () => {

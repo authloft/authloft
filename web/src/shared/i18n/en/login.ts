@@ -80,9 +80,12 @@ export const login: typeof zhLogin = {
   'login.passkeyVerify': 'Verify',
   'login.passkeyCancelled': 'Passkey verification cancelled',
   'login.passkeyFailed': 'Passkey verification failed. Please try again',
-  // Redirect failure message carries the provider display name.
-  'login.oauthRedirectFailed':
-    'Could not redirect to {provider}. Please try again',
+  // Third-party redirect failure (retry = re-pick the provider from the wall;
+  // no provider name).
+  'login.oauthRedirectFailed': 'Something went wrong. Please try again',
+  // Third-party redirect in flight (pending frame, carries the provider name).
+  'login.redirectingTo':
+    'Redirecting to {provider} for authorization, please wait…',
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': 'Please complete the verification first',

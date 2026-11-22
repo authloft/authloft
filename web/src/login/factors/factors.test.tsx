@@ -12,11 +12,7 @@ import { FieldSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { OidcContext, SnapshotProvider } from '../../shared/types/init';
 import { OTPForm, isOtpForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
-import {
-  ProviderButtons,
-  providerDisplayName,
-  startRedirect,
-} from './ProviderButtons';
+import { ProviderButtons, startRedirect } from './ProviderButtons';
 import { RecoveryCodeForm, recoverySubmitGuard } from './RecoveryCodeForm';
 import { WebAuthnButton, authenticate, isWebAuthnForm } from './WebAuthnButton';
 import { lookupFactor } from './registry';
@@ -434,20 +430,6 @@ describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 
     });
     expect(saved).toHaveLength(1);
     expect(saved[0].scope).toBe('openid profile email phone');
-  });
-});
-
-describe('providerDisplayName（失败帧展示名）', () => {
-  const providers: SnapshotProvider[] = [
-    { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect' },
-    { providerKey: 'noname', type: 'x', channel: 'redirect' },
-  ];
-
-  test('快照 displayName 优先；displayName 缺失 / 未知 key 回显 providerKey（§9 第 18 条）', () => {
-    expect(providerDisplayName(providers, 'qq')).toBe('QQ');
-    expect(providerDisplayName(providers, 'noname')).toBe('noname');
-    expect(providerDisplayName(providers, 'ghost')).toBe('ghost');
-    expect(providerDisplayName([], 'qq')).toBe('qq');
   });
 });
 
