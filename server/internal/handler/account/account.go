@@ -462,6 +462,8 @@ func (h *Handler) captchaConfig(ctx context.Context) *commonv1.CaptchaConfig {
 		ProviderKey: cfg.ProviderKey,
 		Type:        cfg.Type,
 		SiteKey:     cfg.SiteKey,
+		Region:      cfg.Region,
+		Prefix:      cfg.Prefix,
 	}
 }
 
@@ -1043,6 +1045,8 @@ func withBindCaptchaConfig(err error, code, message string) error {
 		ProviderKey: f.Config.ProviderKey,
 		Type:        f.Config.Type,
 		SiteKey:     f.Config.SiteKey,
+		Region:      f.Config.Region,
+		Prefix:      f.Config.Prefix,
 	})
 }
 
@@ -1244,6 +1248,8 @@ func encodeAccountCaptchaFailure(f *captcha.Failure) error {
 		ProviderKey: f.Config.ProviderKey,
 		Type:        f.Config.Type,
 		SiteKey:     f.Config.SiteKey,
+		Region:      f.Config.Region,
+		Prefix:      f.Config.Prefix,
 	})
 }
 

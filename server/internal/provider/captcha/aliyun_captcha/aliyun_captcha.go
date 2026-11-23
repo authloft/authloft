@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -43,10 +44,13 @@ const (
 )
 
 // 地域 endpoint（region 与 endpoint 必须匹配，否则厂商侧校验失败）。
+// ga 为全球加速：就近接入、流量最终路由新加坡，不透出客户端真实 IP；
+// 其服务端 endpoint 与 sg 的地域 endpoint 不同，不可互换。
 const (
 	defaultRegion = "cn"
 	endpointCN    = "https://captcha.cn-shanghai.aliyuncs.com"
 	endpointSGP   = "https://captcha.ap-southeast-1.aliyuncs.com"
+	endpointGA    = "https://captcha-open-ga.aliyuncs.com"
 )
 
 // regionEndpoint region → RPC endpoint 映射（region 与 endpoint 必须匹配，
@@ -57,6 +61,8 @@ func regionEndpoint(region string) (string, bool) {
 		return endpointCN, true
 	case "sgp":
 		return endpointSGP, true
+	case "ga":
+		return endpointGA, true
 	}
 	return "", false
 }
@@ -64,19 +70,64 @@ func regionEndpoint(region string) (string, bool) {
 // remoteBodyLimit 校验响应体读取上限（64 KiB，防异常端点拖挂，同 geetest_v4）。
 const remoteBodyLimit = 1 << 16
 
+// browserConnectSrc 浏览器侧需放行的 connect-src 固定域名（接口文档 §8
+// aliyun_captcha 行 / 阿里云「客户端接入常见问题」Q11 白名单）：设备指纹与
+// 上传接口，与具体场景无关、可静态登记。endpointCN/SGP/GA 是服务端
+// VerifyIntelligentCaptcha RPC 的 endpoint（仅 Authloft 出站调用，不经过
+// 浏览器 CSP），故不在本清单内——放进来属无效噪音。
+var browserConnectSrc = []string{
+	"https://cloudauth-device.aliyuncs.com",
+	"https://cn-shanghai.device.saf.aliyuncs.com",
+	"https://cloudauth-device.ap-southeast-1.aliyuncs.com",
+	"https://ap-southeast-1.device.saf.aliyuncs.com",
+	"https://ap-southeast-1-ga.device.saf.aliyuncs.com",
+	"https://cloudauth-device-dualstack.cn-shanghai.aliyuncs.com",
+	"https://cloudauth-device-dualstack.ap-southeast-1.aliyuncs.com",
+	"https://upload.captcha-open.aliyuncs.com",
+	"https://upload.captcha-open-b.aliyuncs.com",
+	"https://upload.captcha-open-southeast.aliyuncs.com",
+	"https://upload.captcha-open-southeast-b.aliyuncs.com",
+	"https://upload.captcha-open-ga-web.aliyuncs.com",
+	"https://upload.captcha-open-ga-web-b.aliyuncs.com",
+}
+
+// prefixDomain 身份标（prefix）子域形态，字母数字短串。仅用于拼 connect-src
+// 子域，非法 / 含点或路径字符的身份标不派生，防注入。
+var prefixPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 func init() {
 	provider.RegisterVerifier(Type, provider.Meta{
 		DisplayName: "阿里云验证码",
 		Category:    provider.CategoryCaptcha,
 		Schema:      schema,
-		// CSP 源声明随实现走（§9.4；源值 = 接口文档 §8 参考源清单 aliyun_captcha
-		// 行，不在 csp.go 写死厂商域）：弹层为 DOM 渲染无固定 iframe 域，脚本
-		// 经 nonce 信任链放行（script-src 不放通），connect-src 两地域域名为
-		// 参考值（确切清单以厂商控制台实际返回为准）。
+		// CSP 源声明随实现走（§9.4；源值 = 接口文档 §8 aliyun_captcha 行，
+		// 不在 csp.go 写死厂商域）：弹层为 DOM 渲染无固定 iframe 域，脚本经
+		// nonce 信任链放行（script-src 不放通）。connect-src 分两段：设备/上传
+		// 固定域名静态登记；初始化 / 校验请求走 {prefix}.captcha-open.aliyuncs.com
+		// 身份标子域，随当前生效行 prefix 派生（§9.4「按行配置派生源」，同
+		// capjs），未配置 prefix 不贡献该子域。
 		CSPSources: map[string][]string{
-			"connect-src": {endpointCN, endpointSGP},
+			"connect-src": browserConnectSrc,
 		},
+		CSPSourcesOf: cspSourcesOf,
 	}, newVerifier)
+}
+
+// cspSourcesOf 按行派生 connect-src（§9.4）：身份标子域随 prefix 变化，
+// 静态登记表达不了。阿里云「客户端初始化报错说明」明确初始化请求域名为
+// {prefix}.captcha-open.aliyuncs.com，浏览器实测经该子域取验证码资源；
+// prefix 空 / 非法返回 nil，不贡献源。
+func cspSourcesOf(p *provider.Provider) map[string][]string {
+	if p == nil || p.Ext == nil {
+		return nil
+	}
+	prefix := strings.TrimSpace(p.Ext.GetPrefix())
+	if !prefixPattern.MatchString(prefix) {
+		return nil
+	}
+	return map[string][]string{
+		"connect-src": {"https://" + prefix + ".captcha-open.aliyuncs.com"},
+	}
 }
 
 // schema /schema 唯一数据源：表列基线与各家一致（schemafield 单一来源），
@@ -96,7 +147,7 @@ func schema() []provider.FieldMeta {
 			Help: "admin.schemaField.accessKeyIdHelp", Storage: provider.StorageExt},
 		common[1],
 		provider.FieldMeta{Key: "region", Label: "admin.schemaField.regionLabel", Type: "select", Section: "endpoint", Required: true,
-			Options: []string{"cn", "sgp"}, Default: defaultRegion, Help: "admin.schemaField.regionHelp", Storage: provider.StorageExt},
+			Options: []string{"cn", "sgp", "ga"}, Default: defaultRegion, Help: "admin.schemaField.regionHelp", Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "prefix", Label: "admin.schemaField.prefixLabel", Type: "text", Section: "endpoint",
 			Help: "admin.schemaField.prefixHelp", Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "encrypt_key", Label: "admin.schemaField.encryptKeyLabel", Type: "secret", Section: "credential", Advanced: true,
@@ -144,7 +195,7 @@ func newVerifier(p *provider.Provider) (provider.Verifier, error) {
 	if verifyURL == "" {
 		e, ok := regionEndpoint(region)
 		if !ok {
-			return nil, fmt.Errorf("captcha: aliyun_captcha region %q 无法映射地域 endpoint（可选 cn/sgp）", region)
+			return nil, fmt.Errorf("captcha: aliyun_captcha region %q 无法映射地域 endpoint（可选 cn/sgp/ga）", region)
 		}
 		verifyURL = e
 	}

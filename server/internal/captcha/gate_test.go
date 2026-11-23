@@ -120,6 +120,40 @@ func TestGateConfigUsesCurrentProvider(t *testing.T) {
 	}
 }
 
+// TestGateConfigCarriesRegionPrefix 非敏感地域配置随下发出口透传：阿里云验证码
+// 的 region/prefix 取自当前生效行 Ext，三处出口共用 normalize 同源（§2.5/§9.1）。
+func TestGateConfigCarriesRegionPrefix(t *testing.T) {
+	p := testProvider("aliyun-1", TypeAliyunCaptcha, "scene-1")
+	p.Ext.Region = "ga"
+	p.Ext.Prefix = "pre9"
+	g := NewGate(mapSettings{}, &fakeCatalog{p: p}, newFakeImageStore(), func(*provider.Provider) (provider.Verifier, error) {
+		return nil, nil
+	})
+	got := g.Config(context.Background())
+	if got.Region != "ga" || got.Prefix != "pre9" {
+		t.Fatalf("config region/prefix = %q/%q, want ga/pre9", got.Region, got.Prefix)
+	}
+	// 降级内置图形码时两字段为空。
+	got = normalize(nil)
+	if got.Region != "" || got.Prefix != "" {
+		t.Fatalf("builtin region/prefix = %q/%q, want empty", got.Region, got.Prefix)
+	}
+}
+
+// TestGateConfigRegionPrefixOnlyForAliyun 非阿里云验证码行即使 Ext 残留
+// region/prefix（schema 未声明，管理端填不进去）也不透出到公开配置视图。
+func TestGateConfigRegionPrefixOnlyForAliyun(t *testing.T) {
+	for _, typ := range []string{TypeTurnstile, TypeRecaptcha, TypeHcaptcha, TypeGeetestV4, TypeCapjs} {
+		p := testProvider("other-1", typ, "site-1")
+		p.Ext.Region = "sgp"
+		p.Ext.Prefix = "pre9"
+		got := normalize(p)
+		if got.Region != "" || got.Prefix != "" {
+			t.Errorf("%s region/prefix = %q/%q, want empty", typ, got.Region, got.Prefix)
+		}
+	}
+}
+
 // TestGateConfigClosedSetExpandedProviders 三家新 type 行（§9.1 / §15.5）：
 // 配置完整时下发自身配置、不再降级 image（siteKey 统一取 ext.client_id，
 // 分别承载 captcha_id / SceneId / site key）；siteKey 缺失同按配置残缺

@@ -330,6 +330,9 @@ func TestFlagsAndCaptcha(t *testing.T) {
 	if cap["providerKey"] != "cf_turnstile" || cap["type"] != "turnstile" || cap["siteKey"] != "0x4AAA" {
 		t.Errorf("captcha = %v", cap)
 	}
+	if cap["region"] != "ga" || cap["prefix"] != "pre9" {
+		t.Errorf("captcha region/prefix = %v/%v, want ga/pre9", cap["region"], cap["prefix"])
+	}
 }
 
 // TestRegisterFlow flow=register（§2.1 行 411）：按注册开关过滤、不读

@@ -82,7 +82,7 @@ message Ext {
   string encrypt_key   = 56;  // 阿里云验证码加密模式 ekey（服务端生成 EncryptedSceneId，advanced 可选）
 
   // ---- 消息扩展（57-63）----
-  string region               = 57;  // 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp（select）
+  string region               = 57;  // 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp|ga（select）
   string messaging_service_sid = 58; // Twilio Messaging Service SID（MG 前缀，与 from 二选一）
   bool   sandbox_mode         = 59;  // SendGrid 沙箱模式（true = 返回成功但不真发，联调用）
   string reply_to             = 60;  // SendGrid 回复地址（reply_to.email）

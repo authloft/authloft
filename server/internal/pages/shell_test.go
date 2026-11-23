@@ -213,7 +213,7 @@ func newFixture(t *testing.T) *fixture {
 		Settings:   st,
 		Loader:     loader,
 		Factors:    defaultFactors(),
-		Gate:       fakeCaptcha{cfg: captcha.Config{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0x4AAA"}},
+		Gate:       fakeCaptcha{cfg: captcha.Config{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0x4AAA", Region: "ga", Prefix: "pre9"}},
 		Sync:       sessionsvc.NewSyncCookieURLBuilder(codec),
 		Codec:      codec,
 		JWT:        jw,

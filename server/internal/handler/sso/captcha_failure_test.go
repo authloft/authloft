@@ -75,7 +75,7 @@ type chainCatalog struct{}
 
 func (chainCatalog) Current(context.Context) (*provider.Provider, error) {
 	return &provider.Provider{
-		Key: "cf_turnstile", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "0xSITE"},
+		Key: "cf_aliyun", Type: "aliyun_captcha", Ext: &providerpb.Ext{ClientId: "0xSITE", Region: "sgp", Prefix: "pre1"},
 	}, nil
 }
 
@@ -188,8 +188,11 @@ func TestLoginDefaultCaptchaRequiredConnectError(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("details 缺少 api.common.v1.CaptchaConfig（captcha 配置未并列下发）")
 	}
-	if cfg.GetProviderKey() != "cf_turnstile" || cfg.GetType() != "turnstile" || cfg.GetSiteKey() != "0xSITE" {
-		t.Fatalf("CaptchaConfig = %+v, want 当前生效 turnstile 配置", cfg)
+	if cfg.GetProviderKey() != "cf_aliyun" || cfg.GetType() != "aliyun_captcha" || cfg.GetSiteKey() != "0xSITE" {
+		t.Fatalf("CaptchaConfig = %+v, want 当前生效 aliyun_captcha 配置", cfg)
+	}
+	if cfg.GetRegion() != "sgp" || cfg.GetPrefix() != "pre1" {
+		t.Fatalf("CaptchaConfig region/prefix = %q/%q, want sgp/pre1", cfg.GetRegion(), cfg.GetPrefix())
 	}
 }
 
@@ -224,20 +227,20 @@ func TestCaptchaTopLevelOnly(t *testing.T) {
 		{
 			name:       "LoginDefault",
 			procedure:  ssov1connect.SsoServiceLoginDefaultProcedure,
-			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
-			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_aliyun","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_aliyun","token":"tok-new"}}`,
 		},
 		{
 			name:       "Register",
 			procedure:  ssov1connect.SsoServiceRegisterProcedure,
-			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
-			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_aliyun","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_aliyun","token":"tok-new"}}`,
 		},
 		{
 			name:       "ResetPassword",
 			procedure:  ssov1connect.SsoServiceResetPasswordProcedure,
-			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
-			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_aliyun","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_aliyun","token":"tok-new"}}`,
 		},
 	}
 	for _, tc := range cases {
@@ -306,10 +309,13 @@ func assertCaptchaRequired(t *testing.T, url, body string) {
 	if cfg == nil {
 		t.Fatal("details 缺少 CaptchaConfig（captcha 配置未并列下发）")
 	}
-	// 三字段逐项断言：与 gate 单一出口的当前生效项一致（本文 fake 为
-	// cf_turnstile / turnstile / 0xSITE）；任一字段缺失或串位即失败。
-	if cfg.GetProviderKey() != "cf_turnstile" || cfg.GetType() != "turnstile" || cfg.GetSiteKey() != "0xSITE" {
-		t.Fatalf("CaptchaConfig = %+v, want cf_turnstile/turnstile/0xSITE", cfg)
+	// 字段逐项断言：与 gate 单一出口的当前生效项一致（本文 fake 为
+	// cf_aliyun / aliyun_captcha / 0xSITE / sgp / pre1）；任一字段缺失或串位即失败。
+	if cfg.GetProviderKey() != "cf_aliyun" || cfg.GetType() != "aliyun_captcha" || cfg.GetSiteKey() != "0xSITE" {
+		t.Fatalf("CaptchaConfig = %+v, want cf_aliyun/aliyun_captcha/0xSITE", cfg)
+	}
+	if cfg.GetRegion() != "sgp" || cfg.GetPrefix() != "pre1" {
+		t.Fatalf("CaptchaConfig region/prefix = %q/%q, want sgp/pre1", cfg.GetRegion(), cfg.GetPrefix())
 	}
 }
 

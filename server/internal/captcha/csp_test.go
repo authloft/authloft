@@ -23,6 +23,23 @@ import (
 	_ "authloft/internal/provider/captcha/geetest_v4"
 )
 
+// aliyunStaticConnectSrc 阿里云验证码静态 connect-src 期望值（设备指纹 /
+// 上传固定域名；身份标子域由按行派生另计）。
+const aliyunStaticConnectSrc = "connect-src " +
+	"https://cloudauth-device.aliyuncs.com " +
+	"https://cn-shanghai.device.saf.aliyuncs.com " +
+	"https://cloudauth-device.ap-southeast-1.aliyuncs.com " +
+	"https://ap-southeast-1.device.saf.aliyuncs.com " +
+	"https://ap-southeast-1-ga.device.saf.aliyuncs.com " +
+	"https://cloudauth-device-dualstack.cn-shanghai.aliyuncs.com " +
+	"https://cloudauth-device-dualstack.ap-southeast-1.aliyuncs.com " +
+	"https://upload.captcha-open.aliyuncs.com " +
+	"https://upload.captcha-open-b.aliyuncs.com " +
+	"https://upload.captcha-open-southeast.aliyuncs.com " +
+	"https://upload.captcha-open-southeast-b.aliyuncs.com " +
+	"https://upload.captcha-open-ga-web.aliyuncs.com " +
+	"https://upload.captcha-open-ga-web-b.aliyuncs.com"
+
 // TestCatalogCSPNoContribution 无贡献各态（§8「未配置的 Provider 不写入
 // 任何域名」；§9.4 Current 同源判定）：键空串 / 键未设置 / 行不存在 /
 // 查询 error / 未登记 type（image / 未知值）→ 空串；查询 error 不
@@ -72,8 +89,7 @@ func TestCatalogCSPProviders(t *testing.T) {
 			"frame-src https://hcaptcha.com https://*.hcaptcha.com; connect-src https://hcaptcha.com https://*.hcaptcha.com; style-src https://hcaptcha.com https://*.hcaptcha.com"},
 		{"geetest_v4", "geo", TypeGeetestV4,
 			"frame-src https://gcaptcha4.geetest.com; connect-src https://gcaptcha4.geetest.com"},
-		{"aliyun_captcha", "aly", TypeAliyunCaptcha,
-			"connect-src https://captcha.cn-shanghai.aliyuncs.com https://captcha.ap-southeast-1.aliyuncs.com"},
+		{"aliyun_captcha", "aly", TypeAliyunCaptcha, aliyunStaticConnectSrc},
 		{"capjs", "cap", TypeCapjs,
 			"worker-src blob:"},
 	}
@@ -136,7 +152,7 @@ func TestCatalogCSPPerRowOnlyCurrentProvider(t *testing.T) {
 	}
 	want := map[string]string{
 		"geo": "frame-src https://gcaptcha4.geetest.com; connect-src https://gcaptcha4.geetest.com",
-		"aly": "connect-src https://captcha.cn-shanghai.aliyuncs.com https://captcha.ap-southeast-1.aliyuncs.com",
+		"aly": aliyunStaticConnectSrc,
 		"cap": "worker-src blob:",
 	}
 	keys := mapKeys{settings.KeyCaptchaProviderKey: "geo"}
@@ -151,6 +167,40 @@ func TestCatalogCSPPerRowOnlyCurrentProvider(t *testing.T) {
 
 // cspProbeOnce 白名单探针只注册一次（防 -count 重复注册 panic）。
 var cspProbeOnce sync.Once
+
+// TestCatalogCSPAliyunDerivedConnectSrc 阿里云验证码按行派生 connect-src
+// （接口文档 §8 aliyun_captcha 行 / §9.4「按行配置派生源」）：身份标子域
+// 随当前生效行 prefix 派生并与静态域名同指令合并（静态在前、去重）；
+// prefix 空 / 非法不派生（防注入），仅静态片段输出。
+func TestCatalogCSPAliyunDerivedConnectSrc(t *testing.T) {
+	cases := []struct {
+		name   string
+		prefix string
+		want   string
+	}{
+		{"合法身份标派生", "abc123",
+			aliyunStaticConnectSrc + " https://abc123.captcha-open.aliyuncs.com"},
+		{"带连字符身份标派生", "ab-c_1",
+			aliyunStaticConnectSrc + " https://ab-c_1.captcha-open.aliyuncs.com"},
+		{"prefix 空不派生", "", aliyunStaticConnectSrc},
+		{"含点非法不派生", "bad.example", aliyunStaticConnectSrc},
+		{"含路径非法不派生", "bad/path", aliyunStaticConnectSrc},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewCatalog(
+				mapKeys{settings.KeyCaptchaProviderKey: "aly"},
+				&fakeSource{rows: map[string]*provider.Provider{
+					"aly": {Key: "aly", Type: TypeAliyunCaptcha, Row: captchaRow("aly", TypeAliyunCaptcha, 1, "scene"),
+						Ext: &providerpb.Ext{Prefix: tc.prefix}},
+				}},
+			)
+			if got := c.CSP(); got != tc.want {
+				t.Fatalf("CSP() = %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
 
 // TestCatalogCSPCapjsDerivedConnectSrc capjs 行派生 connect-src（接口文档 §8
 // capjs 行 / 后端架构 §9.4「按行配置派生源」）：片段含 widget_api_base 的

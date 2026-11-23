@@ -38,7 +38,13 @@ type CaptchaConfig struct {
 	// 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5）；image = 内置自绘图形码（含降级态）。
 	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	// 第三方站点 key；type=image 时为空串（§2.5）。
-	SiteKey       string `protobuf:"bytes,3,opt,name=site_key,json=siteKey,proto3" json:"site_key,omitempty"`
+	SiteKey string `protobuf:"bytes,3,opt,name=site_key,json=siteKey,proto3" json:"site_key,omitempty"`
+	// 厂商地域（非敏感配置）：阿里云验证码 cn/sgp/ga 决定服务端 RPC endpoint
+	// 与客户端 Region，两侧国内/海外属性必须一致（§12.1、§9.1）。
+	Region string `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`
+	// 厂商实例前缀（非敏感配置）：阿里云验证码 AliyunCaptchaConfig.prefix，
+	// 与 region 一并下发供前端 V3 初始化（§12.1）。
+	Prefix        string `protobuf:"bytes,5,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -94,15 +100,31 @@ func (x *CaptchaConfig) GetSiteKey() string {
 	return ""
 }
 
+func (x *CaptchaConfig) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *CaptchaConfig) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
 var File_api_common_v1_captcha_proto protoreflect.FileDescriptor
 
 const file_api_common_v1_captcha_proto_rawDesc = "" +
 	"\n" +
-	"\x1bapi/common/v1/captcha.proto\x12\rapi.common.v1\"a\n" +
+	"\x1bapi/common/v1/captcha.proto\x12\rapi.common.v1\"\x91\x01\n" +
 	"\rCaptchaConfig\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x19\n" +
-	"\bsite_key\x18\x03 \x01(\tR\asiteKeyB(Z&authloft/gen/go/api/common/v1;commonv1b\x06proto3"
+	"\bsite_key\x18\x03 \x01(\tR\asiteKey\x12\x16\n" +
+	"\x06region\x18\x04 \x01(\tR\x06region\x12\x16\n" +
+	"\x06prefix\x18\x05 \x01(\tR\x06prefixB(Z&authloft/gen/go/api/common/v1;commonv1b\x06proto3"
 
 var (
 	file_api_common_v1_captcha_proto_rawDescOnce sync.Once

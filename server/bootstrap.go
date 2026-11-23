@@ -101,6 +101,7 @@ import (
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/sms/aliyun_sms_intl"
 	_ "authloft/internal/provider/sms/tencent_sms"
 	_ "authloft/internal/provider/sms/twilio"
 	_ "authloft/internal/provider/storage/cos"

@@ -337,7 +337,7 @@ export const admin = {
     '加密模式专用，服务端据此生成 EncryptedSceneId（advanced）',
   'admin.schemaField.regionLabel': '地域',
   'admin.schemaField.regionHelp':
-    '腾讯云短信填 X-TC-Region 地域；阿里云验证码选 cn / sgp',
+    '腾讯云短信填 X-TC-Region 地域；阿里云验证码选 cn（国内）/ sgp（新加坡）/ ga（全球加速）',
   'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
   'admin.schemaField.messagingServiceSidHelp':
     'MG 前缀；与发件号码（from）二选一',
@@ -379,6 +379,7 @@ export const admin = {
   // 新增字段里的 select 取值（region 为腾讯云短信 pattern 文本输入、无 option 键）。
   'admin.schemaOption.region.cn': '中国（cn）',
   'admin.schemaOption.region.sgp': '新加坡（sgp）',
+  'admin.schemaOption.region.ga': '全球加速（ga）',
   'admin.schemaOption.address_type.0': '随机账号',
   'admin.schemaOption.address_type.1': '发信地址',
   'admin.schemaOption.widget_product.bind': '隐藏式（bind）',

@@ -169,8 +169,8 @@ func TestAliyunCaptchaRegistered(t *testing.T) {
 	}
 	region := got["region"]
 	if region.Type != "select" || !region.Required || region.Default != "cn" ||
-		strings.Join(region.Options, ",") != "cn,sgp" || region.Storage != provider.StorageExt {
-		t.Errorf("region = %+v, want select 必填 cn/sgp default cn 落 Ext", region)
+		strings.Join(region.Options, ",") != "cn,sgp,ga" || region.Storage != provider.StorageExt {
+		t.Errorf("region = %+v, want select 必填 cn/sgp/ga default cn 落 Ext", region)
 	}
 	ek := got["encrypt_key"]
 	if ek.Type != "secret" || ek.Required || !ek.Advanced || ek.Storage != provider.StorageExt {
@@ -187,11 +187,58 @@ func TestAliyunCaptchaRegistered(t *testing.T) {
 		t.Error("is_enabled 是 auth 专属开关，captcha 类别不得声明")
 	}
 	src := meta.CSPSources["connect-src"]
-	if len(src) != 2 || src[0] != endpointCN || src[1] != endpointSGP {
-		t.Errorf("connect-src = %v, want [%s %s]", src, endpointCN, endpointSGP)
+	if len(src) != len(browserConnectSrc) {
+		t.Errorf("connect-src 数量 = %d, want %d", len(src), len(browserConnectSrc))
+	}
+	for i, want := range browserConnectSrc {
+		if i >= len(src) || src[i] != want {
+			t.Errorf("connect-src[%d] = %v, want %s", i, src, want)
+			break
+		}
+	}
+	for _, serverOnly := range []string{endpointCN, endpointSGP, endpointGA} {
+		for _, got := range src {
+			if got == serverOnly {
+				t.Errorf("connect-src 含服务端 RPC endpoint %s（不经浏览器，不应登记）", serverOnly)
+			}
+		}
+	}
+	if meta.CSPSourcesOf == nil {
+		t.Error("CSPSourcesOf 应声明（身份标子域按行派生）")
 	}
 	if _, ok := meta.CSPSources["frame-src"]; ok {
 		t.Error("frame-src 不应声明（弹层为 DOM 渲染无固定 iframe 域）")
+	}
+}
+
+// TestCSPSourcesOf 按行派生身份标子域：合法 prefix 派生 connect-src，
+// 空 / 非法（防注入）返回 nil 不贡献源。
+func TestCSPSourcesOf(t *testing.T) {
+	for _, tc := range []struct {
+		name, prefix, want string
+	}{
+		{"合法", "abc123", "https://abc123.captcha-open.aliyuncs.com"},
+		{"连字符下划线", "ab-c_1", "https://ab-c_1.captcha-open.aliyuncs.com"},
+		{"空", "", ""},
+		{"含点", "bad.example", ""},
+		{"含路径", "bad/path", ""},
+		{"含协议", "https://evil", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cspSourcesOf(&provider.Provider{Ext: &providerpb.Ext{Prefix: tc.prefix}})
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("cspSourcesOf = %v, want nil", got)
+				}
+				return
+			}
+			if len(got["connect-src"]) != 1 || got["connect-src"][0] != tc.want {
+				t.Fatalf("cspSourcesOf = %v, want connect-src [%s]", got, tc.want)
+			}
+		})
+	}
+	if got := cspSourcesOf(nil); got != nil {
+		t.Errorf("cspSourcesOf(nil) = %v, want nil", got)
 	}
 }
 
@@ -338,8 +385,8 @@ func TestNonceUnique(t *testing.T) {
 
 // TestNewVerifierFailFast 构造期 fail-fast：nil provider / nil ext / 缺
 // client_id(SceneId) / 缺 access_key_id / 缺 client_secret / 未知 region /
-// endpoint 非法 URL 均构造失败；region 空回落 cn、sgp 映射新加坡地域
-// endpoint、endpoint 覆盖时跳过地域映射。
+// endpoint 非法 URL 均构造失败；region 空回落 cn、sgp 映射新加坡地域、
+// ga 映射全球加速 endpoint，endpoint 覆盖时跳过地域映射。
 func TestNewVerifierFailFast(t *testing.T) {
 	if _, err := provider.NewVerifier(nil); err == nil {
 		t.Fatal("nil provider 应构造失败")
@@ -392,6 +439,20 @@ func TestNewVerifierFailFast(t *testing.T) {
 	}
 	if impl = v.(*Verifier); impl.verifyURL != endpointSGP {
 		t.Errorf("region=sgp endpoint = %q, want %q", impl.verifyURL, endpointSGP)
+	}
+
+	// region=ga 映射全球加速 endpoint（就近接入，流量最终路由新加坡）。
+	if got, ok := regionEndpoint("ga"); !ok || got != endpointGA {
+		t.Errorf("regionEndpoint(ga) = %q, %v, want %q, true", got, ok, endpointGA)
+	}
+	v, err = newVerifier(&provider.Provider{Key: "r", Type: Type, Ext: &providerpb.Ext{
+		ClientId: "s", ClientSecret: "k", AccessKeyId: "ak", Region: "ga",
+	}})
+	if err != nil {
+		t.Fatalf("region=ga: %v", err)
+	}
+	if impl = v.(*Verifier); impl.verifyURL != endpointGA {
+		t.Errorf("region=ga endpoint = %q, want %q", impl.verifyURL, endpointGA)
 	}
 
 	// endpoint 覆盖优先于地域映射（自定义网关场景）。

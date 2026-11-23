@@ -16,9 +16,8 @@
  * 验证未通过（无凭据产出，getToken 保持 undefined），厂商弹层内自带失败
  * 引导，不再叠加基座错误态。
  *
- * region 缺省 cn（后端 Schema 默认值）、prefix 缺省空串——两者随
- * CaptchaConfig 无浏览器下发渠道，后台 prefix(68) / region(57) 需透传时
- * 走 adapter options（接线卡对齐后收口）。
+ * region / prefix 由后台配置经 CaptchaConfig 下发，保证客户端地域与服务端
+ * endpoint 的国内/海外属性一致；options 仅作测试注入替身，优先于下发值。
  *
  * 类型手写最小面声明（零 npm 依赖，沿 Turnstile 先例）；getVendor 可注入，
  * node 测试环境注入 mock。
@@ -77,9 +76,9 @@ declare global {
 export interface AliyunCaptchaAdapterOptions extends VendorChallengeOptions {
   /** 厂商全局对象取用（缺省 () => window.initAliyunCaptcha；测试注入 mock）。 */
   getVendor?: () => AliyunCaptchaApi | undefined;
-  /** 地域（缺省 cn；后端 Schema 默认值，决定厂商资源与校验地域一致）。 */
+  /** 地域注入（测试用；优先于 CaptchaConfig.region，缺省 cn）。 */
   region?: string;
-  /** 实例前缀（控制台实例信息卡获取；缺省空串待配置渠道接线）。 */
+  /** 实例前缀注入（测试用；优先于 CaptchaConfig.prefix，缺省空串）。 */
   prefix?: string;
 }
 
@@ -103,8 +102,9 @@ export class AliyunCaptchaAdapter extends VendorChallengeAdapter<AliyunCaptchaAp
         window.initAliyunCaptcha
           ? { initAliyunCaptcha: window.initAliyunCaptcha }
           : undefined);
-    this.region = options.region ?? 'cn';
-    this.prefix = options.prefix ?? '';
+    // 下发值为空串（builtin / image 无地域）时回落到默认值，与注入优先级并存。
+    this.region = options.region ?? (captcha.region || 'cn');
+    this.prefix = options.prefix ?? (captcha.prefix || '');
   }
 
   protected scriptUrl(): string {

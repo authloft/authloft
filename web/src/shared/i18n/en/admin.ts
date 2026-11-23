@@ -371,7 +371,7 @@ export const admin: typeof zhAdmin = {
     'Encrypted mode only; the server derives EncryptedSceneId from it (advanced)',
   'admin.schemaField.regionLabel': 'Region',
   'admin.schemaField.regionHelp':
-    'Tencent Cloud SMS takes the X-TC-Region region; Aliyun CAPTCHA picks cn / sgp',
+    'Tencent Cloud SMS takes the X-TC-Region region; Aliyun CAPTCHA picks cn (China) / sgp (Singapore) / ga (global acceleration)',
   'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
   'admin.schemaField.messagingServiceSidHelp':
     'MG-prefixed; choose either this or the sender number (from)',
@@ -419,6 +419,7 @@ export const admin: typeof zhAdmin = {
   // for Tencent Cloud SMS, no option keys).
   'admin.schemaOption.region.cn': 'China (cn)',
   'admin.schemaOption.region.sgp': 'Singapore (sgp)',
+  'admin.schemaOption.region.ga': 'Global Acceleration (ga)',
   'admin.schemaOption.address_type.0': 'Random account',
   'admin.schemaOption.address_type.1': 'Sender address',
   'admin.schemaOption.widget_product.bind': 'Hidden (bind)',

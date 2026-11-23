@@ -572,7 +572,7 @@ func wantConfigDeps(t *testing.T) *getConfigDeps {
 		providersIn: &fakeProviders{rows: map[string]*model.Provider{
 			"minio": {ProviderKey: "minio", Category: "storage", Type: "s3", IsEnabled: 1, Ext: ext},
 		}},
-		captcha: &fakeCaptcha{cfg: captcha.Config{ProviderKey: "cf", Type: "turnstile", SiteKey: "site-x"}},
+		captcha: &fakeCaptcha{cfg: captcha.Config{ProviderKey: "cf", Type: "turnstile", SiteKey: "site-x", Region: "sgp", Prefix: "pre1"}},
 	}
 }
 
@@ -635,11 +635,14 @@ func TestGetConfigWithSession(t *testing.T) {
 		}
 	}
 
-	// ③ captcha：Gate 现算公开视图（无凭证）——三字段下发，结构上不含
+	// ③ captcha：Gate 现算公开视图（无凭证）——五字段下发，结构上不含
 	// secret（CaptchaConfig 无该字段），响应亦不得出现凭证键。
 	capCfg := got.GetCaptcha()
 	if capCfg.GetProviderKey() != "cf" || capCfg.GetType() != "turnstile" || capCfg.GetSiteKey() != "site-x" {
 		t.Errorf("captcha = {%s %s %s}, want {cf turnstile site-x}", capCfg.GetProviderKey(), capCfg.GetType(), capCfg.GetSiteKey())
+	}
+	if capCfg.GetRegion() != "sgp" || capCfg.GetPrefix() != "pre1" {
+		t.Errorf("captcha region/prefix = %q/%q, want sgp/pre1", capCfg.GetRegion(), capCfg.GetPrefix())
 	}
 	if strings.Contains(raw, "secret") || strings.Contains(raw, "client_secret") {
 		t.Errorf("captcha response leaks credential (body %s)", raw)

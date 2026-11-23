@@ -22,4 +22,10 @@ message CaptchaConfig {
   string type = 2;
   // 第三方站点 key；type=image 时为空串（§2.5）。
   string site_key = 3;
+  // 厂商地域（非敏感配置）：阿里云验证码 cn/sgp/ga 决定服务端 RPC endpoint
+  // 与客户端 Region，两侧国内/海外属性必须一致（§12.1、§9.1）。
+  string region = 4;
+  // 厂商实例前缀（非敏感配置）：阿里云验证码 AliyunCaptchaConfig.prefix，
+  // 与 region 一并下发供前端 V3 初始化（§12.1）。
+  string prefix = 5;
 }

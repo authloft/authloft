@@ -187,6 +187,8 @@ func encodeCaptchaFailure(f *captcha.Failure) error {
 		ProviderKey: f.Config.ProviderKey,
 		Type:        f.Config.Type,
 		SiteKey:     f.Config.SiteKey,
+		Region:      f.Config.Region,
+		Prefix:      f.Config.Prefix,
 	})
 }
 
@@ -527,6 +529,8 @@ func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 			ProviderKey: f.Config.ProviderKey,
 			Type:        f.Config.Type,
 			SiteKey:     f.Config.SiteKey,
+			Region:      f.Config.Region,
+			Prefix:      f.Config.Prefix,
 		})
 	}
 	return coded

@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/common/v1/captcha.proto.
  */
 export const file_api_common_v1_captcha: GenFile = /*@__PURE__*/
-  fileDesc("ChthcGkvY29tbW9uL3YxL2NhcHRjaGEucHJvdG8SDWFwaS5jb21tb24udjEiRQoNQ2FwdGNoYUNvbmZpZxIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEdHlwZRgCIAEoCRIQCghzaXRlX2tleRgDIAEoCUIoWiZhdXRobG9mdC9nZW4vZ28vYXBpL2NvbW1vbi92MTtjb21tb252MWIGcHJvdG8z");
+  fileDesc("ChthcGkvY29tbW9uL3YxL2NhcHRjaGEucHJvdG8SDWFwaS5jb21tb24udjEiZQoNQ2FwdGNoYUNvbmZpZxIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEdHlwZRgCIAEoCRIQCghzaXRlX2tleRgDIAEoCRIOCgZyZWdpb24YBCABKAkSDgoGcHJlZml4GAUgASgJQihaJmF1dGhsb2Z0L2dlbi9nby9hcGkvY29tbW9uL3YxO2NvbW1vbnYxYgZwcm90bzM");
 
 /**
  * CaptchaConfig 是 §2.5 的 captcha 配置对象：注入快照、
@@ -47,6 +47,22 @@ export type CaptchaConfig = Message<"api.common.v1.CaptchaConfig"> & {
    * @generated from field: string site_key = 3;
    */
   siteKey: string;
+
+  /**
+   * 厂商地域（非敏感配置）：阿里云验证码 cn/sgp/ga 决定服务端 RPC endpoint
+   * 与客户端 Region，两侧国内/海外属性必须一致（§12.1、§9.1）。
+   *
+   * @generated from field: string region = 4;
+   */
+  region: string;
+
+  /**
+   * 厂商实例前缀（非敏感配置）：阿里云验证码 AliyunCaptchaConfig.prefix，
+   * 与 region 一并下发供前端 V3 初始化（§12.1）。
+   *
+   * @generated from field: string prefix = 5;
+   */
+  prefix: string;
 };
 
 /**

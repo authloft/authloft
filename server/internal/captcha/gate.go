@@ -98,11 +98,14 @@ var sceneRules = map[string]rule{
 const defaultPwdFailCapture = 3
 
 // Config 是给前端的当前生效配置（每次现算，不走缓存）。
-// 字段名对应接口文档 §1.3 的 captcha.providerKey/type/siteKey。
+// 字段名对应接口文档 §2.5 的 captcha.providerKey/type/siteKey/region/prefix：
+// region/prefix 为非敏感配置，与凭证无关，随三处下发出口透传给前端。
 type Config struct {
 	ProviderKey string `json:"providerKey"`
 	Type        string `json:"type"`
 	SiteKey     string `json:"siteKey,omitempty"`
+	Region      string `json:"region,omitempty"`
+	Prefix      string `json:"prefix,omitempty"`
 }
 
 // ProviderCatalog 返回当前生效、可用的 captcha Provider（完整实例，经
@@ -302,7 +305,15 @@ func normalize(p *provider.Provider) Config {
 		if siteKey == "" {
 			return builtin()
 		}
-		return Config{ProviderKey: p.Key, Type: p.Type, SiteKey: siteKey}
+		cfg := Config{ProviderKey: p.Key, Type: p.Type, SiteKey: siteKey}
+		// region/prefix 是阿里云验证码 V3 的初始化参数（国内/海外属性须与
+		// 服务端 endpoint 一致）；其他 type 的 schema 未声明这两个字段，
+		// 不透出，贴合声明即消费（§2.5、§9.1）。
+		if p.Type == TypeAliyunCaptcha {
+			cfg.Region = p.Ext.GetRegion()
+			cfg.Prefix = p.Ext.GetPrefix()
+		}
+		return cfg
 	default:
 		return builtin()
 	}

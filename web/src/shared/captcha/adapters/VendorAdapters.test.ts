@@ -787,7 +787,13 @@ describe('Geetest adapter：重置与竞态（destroy + 重新 init，旧回调�
 
 function mountAliyun(
   siteKey = 'scene-1',
-  init: { failScript?: boolean; region?: string; prefix?: string } = {},
+  init: {
+    failScript?: boolean;
+    region?: string;
+    prefix?: string;
+    captchaRegion?: string;
+    captchaPrefix?: string;
+  } = {},
 ) {
   // V3 前置全局每次挂载前归零，断言「init 前就位」。
   fakeView.AliyunCaptchaConfig = undefined;
@@ -815,6 +821,8 @@ function mountAliyun(
       providerKey: 'aliyun_captcha',
       type: 'aliyun_captcha',
       siteKey,
+      region: init.captchaRegion,
+      prefix: init.captchaPrefix,
     }),
     {
       document: fakeAliyunDoc as unknown as Document,
@@ -856,8 +864,34 @@ describe('AliyunCaptcha adapter：AliyunCaptchaConfig 前置 → popup 挂载（
     expect(element.tag).toBe('div');
   });
 
-  test('region / prefix 可经 options 覆盖，全局前置同步', async () => {
-    const h = mountAliyun('scene-1', { region: 'sgp', prefix: 'pre9' });
+  test('region / prefix 由后台 CaptchaConfig 下发，全局前置同步', async () => {
+    const h = mountAliyun('scene-1', {
+      captchaRegion: 'ga',
+      captchaPrefix: 'pre-ga',
+    });
+    await flush();
+    expect(fakeView.AliyunCaptchaConfig).toEqual({
+      region: 'ga',
+      prefix: 'pre-ga',
+    });
+  });
+
+  test('captcha.region=sgp 时前置全局按海外地域注入（与服务端 endpoint 同属性）', async () => {
+    mountAliyun('scene-1', { captchaRegion: 'sgp', captchaPrefix: 'pre-sgp' });
+    await flush();
+    expect(fakeView.AliyunCaptchaConfig).toEqual({
+      region: 'sgp',
+      prefix: 'pre-sgp',
+    });
+  });
+
+  test('region / prefix 可经 options 覆盖下发值（测试注入优先），全局前置同步', async () => {
+    const h = mountAliyun('scene-1', {
+      captchaRegion: 'cn',
+      captchaPrefix: 'from-config',
+      region: 'sgp',
+      prefix: 'pre9',
+    });
     await flush();
     expect(fakeView.AliyunCaptchaConfig).toEqual({
       region: 'sgp',
