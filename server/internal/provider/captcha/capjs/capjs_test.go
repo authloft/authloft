@@ -111,58 +111,6 @@ func TestCapjsRegistered(t *testing.T) {
 	if src := meta.CSPSources["worker-src"]; len(src) != 1 || src[0] != "blob:" {
 		t.Errorf("worker-src = %v, want [blob:]（PoW Web Worker）", src)
 	}
-	if meta.CSPSourcesOf == nil {
-		t.Error("CSPSourcesOf 未声明——按行派生源缺失，capd API 会被基线 CSP 拦截")
-	}
-}
-
-// TestCapjsCSPDerivedConnectSrc 按行派生 connect-src（接口文档 §8 capjs 行 /
-// 后端架构 §9.4「按行配置派生源」）：源 = widget_api_base 的 origin——
-// scheme 缺省 https 补全、路径与尾斜杠丢弃、显式 scheme 保留；base 空 /
-// nil Ext / 无 host 的非法值一律不贡献（返回 nil，未配置行不写入任何域名）。
-func TestCapjsCSPDerivedConnectSrc(t *testing.T) {
-	meta, ok := provider.Lookup(Type)
-	if !ok {
-		t.Fatalf("注册表缺 type %q", Type)
-	}
-	cases := []struct {
-		name string
-		base string
-		want string
-	}{
-		{"https 完整", "https://capd.example.com", "https://capd.example.com"},
-		{"路径与尾斜杠丢弃", "https://capd.example.com/prefix/", "https://capd.example.com"},
-		{"scheme 缺省 https", "capd.example.com", "https://capd.example.com"},
-		{"host:port 缺省 https", "capd.example.com:8443", "https://capd.example.com:8443"},
-		{"显式 http 保留", "http://capd.local:8080", "http://capd.local:8080"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := meta.CSPSourcesOf(newProvider("", tc.base))
-			if len(got["connect-src"]) != 1 || got["connect-src"][0] != tc.want {
-				t.Fatalf("CSPSourcesOf(widget_api_base=%q) = %v, want connect-src [%s]", tc.base, got, tc.want)
-			}
-		})
-	}
-	for _, tc := range []struct {
-		name string
-		p    *provider.Provider
-	}{
-		{"base 空不贡献", newProvider("", "")},
-		{"nil ext 不贡献", &provider.Provider{Key: "cap_row", Type: Type}},
-		{"nil provider 不贡献", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := meta.CSPSourcesOf(tc.p); got != nil {
-				t.Fatalf("CSPSourcesOf = %v, want nil（不贡献）", got)
-			}
-		})
-	}
-	t.Run("无 host 非法不贡献", func(t *testing.T) {
-		if got := meta.CSPSourcesOf(newProvider("", "https://")); got != nil {
-			t.Fatalf("CSPSourcesOf(\"https://\") = %v, want nil（非法不贡献）", got)
-		}
-	})
 }
 
 // TestCapjsFactoryJSONSiteverify 真实 factory 分派（provider.NewVerifier）下

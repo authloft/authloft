@@ -51,8 +51,7 @@ func init() {
 		// CSP 源声明随实现走（§9.4；源值 = 接口文档 §8 参考源清单 geetest_v4
 		// 行，不在 csp.go 写死厂商域）：前端 iframe 与 challenge 资源域名。
 		CSPSources: map[string][]string{
-			"frame-src":   {"https://gcaptcha4.geetest.com"},
-			"connect-src": {"https://gcaptcha4.geetest.com"},
+			"frame-src": {"https://gcaptcha4.geetest.com"},
 		},
 	}, newVerifier)
 }

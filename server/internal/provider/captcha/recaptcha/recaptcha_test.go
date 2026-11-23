@@ -31,8 +31,7 @@ func TestTypeRegisteredAndDispatched(t *testing.T) {
 	// CSP 源声明随实现走（§9.4 工厂化收口）：本包登记源 = 接口文档 §8
 	// 参考源清单表，防注册声明漂移。
 	wantCSP := map[string][]string{
-		"frame-src":   {"https://www.google.com/recaptcha/", "https://recaptcha.google.com/recaptcha/"},
-		"connect-src": {"https://www.google.com/recaptcha/"},
+		"frame-src": {"https://www.google.com/recaptcha/", "https://recaptcha.google.com/recaptcha/"},
 	}
 	if !reflect.DeepEqual(meta.CSPSources, wantCSP) {
 		t.Fatalf("meta.CSPSources = %v, want %v（接口文档 §8 参考源清单）", meta.CSPSources, wantCSP)

@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -70,64 +69,15 @@ func regionEndpoint(region string) (string, bool) {
 // remoteBodyLimit 校验响应体读取上限（64 KiB，防异常端点拖挂，同 geetest_v4）。
 const remoteBodyLimit = 1 << 16
 
-// browserConnectSrc 浏览器侧需放行的 connect-src 固定域名（接口文档 §8
-// aliyun_captcha 行 / 阿里云「客户端接入常见问题」Q11 白名单）：设备指纹与
-// 上传接口，与具体场景无关、可静态登记。endpointCN/SGP/GA 是服务端
-// VerifyIntelligentCaptcha RPC 的 endpoint（仅 Authloft 出站调用，不经过
-// 浏览器 CSP），故不在本清单内——放进来属无效噪音。
-var browserConnectSrc = []string{
-	"https://cloudauth-device.aliyuncs.com",
-	"https://cn-shanghai.device.saf.aliyuncs.com",
-	"https://cloudauth-device.ap-southeast-1.aliyuncs.com",
-	"https://ap-southeast-1.device.saf.aliyuncs.com",
-	"https://ap-southeast-1-ga.device.saf.aliyuncs.com",
-	"https://cloudauth-device-dualstack.cn-shanghai.aliyuncs.com",
-	"https://cloudauth-device-dualstack.ap-southeast-1.aliyuncs.com",
-	"https://upload.captcha-open.aliyuncs.com",
-	"https://upload.captcha-open-b.aliyuncs.com",
-	"https://upload.captcha-open-southeast.aliyuncs.com",
-	"https://upload.captcha-open-southeast-b.aliyuncs.com",
-	"https://upload.captcha-open-ga-web.aliyuncs.com",
-	"https://upload.captcha-open-ga-web-b.aliyuncs.com",
-}
-
-// prefixDomain 身份标（prefix）子域形态，字母数字短串。仅用于拼 connect-src
-// 子域，非法 / 含点或路径字符的身份标不派生，防注入。
-var prefixPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-
+// 阿里云验证码弹层为 DOM 渲染、无固定 iframe 域，脚本经 nonce 信任链放行；
+// 浏览器侧设备指纹 / 上传域名的 connect-src 放行已随基线取消，本 provider
+// 不贡献任何 CSP 源（接口文档 §8）。
 func init() {
 	provider.RegisterVerifier(Type, provider.Meta{
 		DisplayName: "阿里云验证码",
 		Category:    provider.CategoryCaptcha,
 		Schema:      schema,
-		// CSP 源声明随实现走（§9.4；源值 = 接口文档 §8 aliyun_captcha 行，
-		// 不在 csp.go 写死厂商域）：弹层为 DOM 渲染无固定 iframe 域，脚本经
-		// nonce 信任链放行（script-src 不放通）。connect-src 分两段：设备/上传
-		// 固定域名静态登记；初始化 / 校验请求走 {prefix}.captcha-open.aliyuncs.com
-		// 身份标子域，随当前生效行 prefix 派生（§9.4「按行配置派生源」，同
-		// capjs），未配置 prefix 不贡献该子域。
-		CSPSources: map[string][]string{
-			"connect-src": browserConnectSrc,
-		},
-		CSPSourcesOf: cspSourcesOf,
 	}, newVerifier)
-}
-
-// cspSourcesOf 按行派生 connect-src（§9.4）：身份标子域随 prefix 变化，
-// 静态登记表达不了。阿里云「客户端初始化报错说明」明确初始化请求域名为
-// {prefix}.captcha-open.aliyuncs.com，浏览器实测经该子域取验证码资源；
-// prefix 空 / 非法返回 nil，不贡献源。
-func cspSourcesOf(p *provider.Provider) map[string][]string {
-	if p == nil || p.Ext == nil {
-		return nil
-	}
-	prefix := strings.TrimSpace(p.Ext.GetPrefix())
-	if !prefixPattern.MatchString(prefix) {
-		return nil
-	}
-	return map[string][]string{
-		"connect-src": {"https://" + prefix + ".captcha-open.aliyuncs.com"},
-	}
 }
 
 // schema /schema 唯一数据源：表列基线与各家一致（schemafield 单一来源），

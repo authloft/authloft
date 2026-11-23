@@ -17,16 +17,15 @@ type fakeCSPSupporter struct{ directive string }
 
 func (f fakeCSPSupporter) CSP() string { return f.directive }
 
-// baseDirectives 测试期望基线（六指令，接口文档 §8 行 1521-1532
-// 逐项表；与 initBase 同构，供逐字对账）。
+// baseDirectives 测试期望基线（五指令，接口文档 §8 逐项表；
+// 与 initBase 同构，供逐字对账）。
 func baseDirectives(nonce string) string {
 	return strings.Join([]string{
-		"default-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self'",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self'",
+		"worker-src 'self'",
 	}, "; ")
 }
 
@@ -154,7 +153,7 @@ func TestCSPNoContributionExactBaseline(t *testing.T) {
 // 同名指令整串仅一次。
 func TestCSPSupporterMergeBaselineFirst(t *testing.T) {
 	r := newTestRouter(CSP(
-		fakeCSPSupporter{directive: "style-src https://x.example.com; connect-src https://api.example.com"},
+		fakeCSPSupporter{directive: "style-src https://x.example.com; frame-src https://frame.example.com"},
 	))
 	r.GET("/", okHandler)
 	rec := doRequest(r, http.MethodGet, "/", nil)
@@ -162,26 +161,26 @@ func TestCSPSupporterMergeBaselineFirst(t *testing.T) {
 	nonce := nonceFromHeader(t, csp)
 	for _, want := range []string{
 		"style-src 'nonce-" + nonce + "' 'self' https://x.example.com",
-		"connect-src 'self' https://api.example.com",
+		"frame-src https://frame.example.com",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP 头缺合并指令 %q：%s", want, csp)
 		}
 	}
-	for _, d := range []string{"style-src", "connect-src"} {
+	for _, d := range []string{"style-src", "frame-src"} {
 		if n := strings.Count(csp, d); n != 1 {
 			t.Errorf("%s 出现 %d 次, want 1（同名指令单条输出）：%s", d, n, csp)
 		}
 	}
 }
 
-// ⑥ 多 supporter 聚合（验收 c）：源级去重（两 supporter 贡献同一指令
-// 同源仅一次、支持者源与基线源重复亦去重）、支持者按装配序追加、基线六
-// 指令顺序不变、基线外新指令（frame-src）按首次出现顺序追加在基线之后。
+// ⑥ 多 supporter 聚合：源级去重（两 supporter 贡献同一指令同源仅一次、
+// 支持者源与基线源重复亦去重）、支持者按装配序追加、基线五指令顺序不变、
+// 基线外新指令（frame-src / font-src）按首次出现顺序追加在基线之后。
 func TestCSPSupporterDedupStableOrder(t *testing.T) {
 	r := newTestRouter(CSP(
-		fakeCSPSupporter{directive: "frame-src https://a.example.com; connect-src https://api.example.com"},
-		fakeCSPSupporter{directive: "connect-src https://api.example.com https://api2.example.com; style-src https://s.example.com; font-src 'self'"},
+		fakeCSPSupporter{directive: "frame-src https://a.example.com; worker-src 'self'"},
+		fakeCSPSupporter{directive: "worker-src 'self' https://w.example.com; style-src https://s.example.com; font-src 'self'"},
 	))
 	r.GET("/", okHandler)
 	rec := doRequest(r, http.MethodGet, "/", nil)
@@ -189,13 +188,13 @@ func TestCSPSupporterDedupStableOrder(t *testing.T) {
 	nonce := nonceFromHeader(t, csp)
 
 	want := strings.Join([]string{
-		"default-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self' https://s.example.com",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self' https://api.example.com https://api2.example.com",
+		"worker-src 'self' https://w.example.com",
 		"frame-src https://a.example.com",
+		"font-src 'self'",
 	}, "; ")
 	if got := csp; got != want {
 		t.Errorf("CSP 头 = %q\nwant 聚合 %q", got, want)

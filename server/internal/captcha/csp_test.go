@@ -1,8 +1,7 @@
 // csp_test.go 覆盖 Catalog.CSP()（docs/后端架构.md §9.4 / docs/接口文档.md
 // §8「provider 贡献源」）：降级各态一律贡献空串（未配置不写入任何域名）、
-// 三家第三方各 type 的登记片段逐字、每请求现算（与 Current 同源，热更新
-// 语义一致）、按行派生源（capjs connect-src）与静态 + 派生聚合（静态在前 /
-// 去重 / 白名单过滤）。
+// 各家第三方各 type 的登记片段逐字、每请求现算（与 Current 同源，热更新
+// 语义一致）、白名单过滤与逐行生效隔离。
 package captcha
 
 import (
@@ -11,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
 	"authloft/internal/settings"
 
@@ -22,23 +20,6 @@ import (
 	_ "authloft/internal/provider/captcha/capjs"
 	_ "authloft/internal/provider/captcha/geetest_v4"
 )
-
-// aliyunStaticConnectSrc 阿里云验证码静态 connect-src 期望值（设备指纹 /
-// 上传固定域名；身份标子域由按行派生另计）。
-const aliyunStaticConnectSrc = "connect-src " +
-	"https://cloudauth-device.aliyuncs.com " +
-	"https://cn-shanghai.device.saf.aliyuncs.com " +
-	"https://cloudauth-device.ap-southeast-1.aliyuncs.com " +
-	"https://ap-southeast-1.device.saf.aliyuncs.com " +
-	"https://ap-southeast-1-ga.device.saf.aliyuncs.com " +
-	"https://cloudauth-device-dualstack.cn-shanghai.aliyuncs.com " +
-	"https://cloudauth-device-dualstack.ap-southeast-1.aliyuncs.com " +
-	"https://upload.captcha-open.aliyuncs.com " +
-	"https://upload.captcha-open-b.aliyuncs.com " +
-	"https://upload.captcha-open-southeast.aliyuncs.com " +
-	"https://upload.captcha-open-southeast-b.aliyuncs.com " +
-	"https://upload.captcha-open-ga-web.aliyuncs.com " +
-	"https://upload.captcha-open-ga-web-b.aliyuncs.com"
 
 // TestCatalogCSPNoContribution 无贡献各态（§8「未配置的 Provider 不写入
 // 任何域名」；§9.4 Current 同源判定）：键空串 / 键未设置 / 行不存在 /
@@ -73,7 +54,7 @@ func TestCatalogCSPNoContribution(t *testing.T) {
 }
 
 // TestCatalogCSPProviders 各第三方 type 的登记片段逐字（接口文档 §8 参考源
-// 清单表；指令序 = 白名单文档序 frame/connect/style/img/worker）。
+// 清单表；指令序 = 白名单文档序 frame/style/worker）。
 func TestCatalogCSPProviders(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -84,12 +65,12 @@ func TestCatalogCSPProviders(t *testing.T) {
 		{"turnstile", "cf_turnstile", TypeTurnstile,
 			"frame-src https://challenges.cloudflare.com"},
 		{"recaptcha", "goog", TypeRecaptcha,
-			"frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/; connect-src https://www.google.com/recaptcha/"},
+			"frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/"},
 		{"hcaptcha", "hc", TypeHcaptcha,
-			"frame-src https://hcaptcha.com https://*.hcaptcha.com; connect-src https://hcaptcha.com https://*.hcaptcha.com; style-src https://hcaptcha.com https://*.hcaptcha.com"},
+			"frame-src https://hcaptcha.com https://*.hcaptcha.com; style-src https://hcaptcha.com https://*.hcaptcha.com"},
 		{"geetest_v4", "geo", TypeGeetestV4,
-			"frame-src https://gcaptcha4.geetest.com; connect-src https://gcaptcha4.geetest.com"},
-		{"aliyun_captcha", "aly", TypeAliyunCaptcha, aliyunStaticConnectSrc},
+			"frame-src https://gcaptcha4.geetest.com"},
+		{"aliyun_captcha", "aly", TypeAliyunCaptcha, ""},
 		{"capjs", "cap", TypeCapjs,
 			"worker-src blob:"},
 	}
@@ -122,7 +103,7 @@ func TestCatalogCSPNotCached(t *testing.T) {
 		t.Fatalf("首次 CSP() = %q, want %q", got, want)
 	}
 	keys[settings.KeyCaptchaProviderKey] = "hc"
-	want := "frame-src https://hcaptcha.com https://*.hcaptcha.com; connect-src https://hcaptcha.com https://*.hcaptcha.com; style-src https://hcaptcha.com https://*.hcaptcha.com"
+	want := "frame-src https://hcaptcha.com https://*.hcaptcha.com; style-src https://hcaptcha.com https://*.hcaptcha.com"
 	if got := c.CSP(); got != want {
 		t.Fatalf("换键后 CSP() = %q\nwant %q", got, want)
 	}
@@ -151,8 +132,8 @@ func TestCatalogCSPPerRowOnlyCurrentProvider(t *testing.T) {
 		"cap": {Key: "cap", Type: TypeCapjs, Row: captchaRow("cap", TypeCapjs, 1, "site")},
 	}
 	want := map[string]string{
-		"geo": "frame-src https://gcaptcha4.geetest.com; connect-src https://gcaptcha4.geetest.com",
-		"aly": aliyunStaticConnectSrc,
+		"geo": "frame-src https://gcaptcha4.geetest.com",
+		"aly": "",
 		"cap": "worker-src blob:",
 	}
 	keys := mapKeys{settings.KeyCaptchaProviderKey: "geo"}
@@ -168,100 +149,8 @@ func TestCatalogCSPPerRowOnlyCurrentProvider(t *testing.T) {
 // cspProbeOnce 白名单探针只注册一次（防 -count 重复注册 panic）。
 var cspProbeOnce sync.Once
 
-// TestCatalogCSPAliyunDerivedConnectSrc 阿里云验证码按行派生 connect-src
-// （接口文档 §8 aliyun_captcha 行 / §9.4「按行配置派生源」）：身份标子域
-// 随当前生效行 prefix 派生并与静态域名同指令合并（静态在前、去重）；
-// prefix 空 / 非法不派生（防注入），仅静态片段输出。
-func TestCatalogCSPAliyunDerivedConnectSrc(t *testing.T) {
-	cases := []struct {
-		name   string
-		prefix string
-		want   string
-	}{
-		{"合法身份标派生", "abc123",
-			aliyunStaticConnectSrc + " https://abc123.captcha-open.aliyuncs.com"},
-		{"带连字符身份标派生", "ab-c_1",
-			aliyunStaticConnectSrc + " https://ab-c_1.captcha-open.aliyuncs.com"},
-		{"prefix 空不派生", "", aliyunStaticConnectSrc},
-		{"含点非法不派生", "bad.example", aliyunStaticConnectSrc},
-		{"含路径非法不派生", "bad/path", aliyunStaticConnectSrc},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := NewCatalog(
-				mapKeys{settings.KeyCaptchaProviderKey: "aly"},
-				&fakeSource{rows: map[string]*provider.Provider{
-					"aly": {Key: "aly", Type: TypeAliyunCaptcha, Row: captchaRow("aly", TypeAliyunCaptcha, 1, "scene"),
-						Ext: &providerpb.Ext{Prefix: tc.prefix}},
-				}},
-			)
-			if got := c.CSP(); got != tc.want {
-				t.Fatalf("CSP() = %q\nwant %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestCatalogCSPCapjsDerivedConnectSrc capjs 行派生 connect-src（接口文档 §8
-// capjs 行 / 后端架构 §9.4「按行配置派生源」）：片段含 widget_api_base 的
-// origin（scheme 缺省 https 补全），白名单序 connect-src 在 worker-src 前；
-// widget_api_base 空（含 nil Ext）不派生，静态 worker-src 输出与改动前逐字
-// 一致（回归断言）。
-func TestCatalogCSPCapjsDerivedConnectSrc(t *testing.T) {
-	cases := []struct {
-		name string
-		base string
-		want string
-	}{
-		{"https base 派生", "https://capd.example.com",
-			"connect-src https://capd.example.com; worker-src blob:"},
-		{"scheme 缺省 https 补全", "capd.example.com:8443",
-			"connect-src https://capd.example.com:8443; worker-src blob:"},
-		{"base 空不派生", "",
-			"worker-src blob:"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := NewCatalog(
-				mapKeys{settings.KeyCaptchaProviderKey: "cap"},
-				&fakeSource{rows: map[string]*provider.Provider{
-					"cap": {Key: "cap", Type: TypeCapjs, Row: captchaRow("cap", TypeCapjs, 1, "site"),
-						Ext: &providerpb.Ext{WidgetApiBase: tc.base}},
-				}},
-			)
-			if got := c.CSP(); got != tc.want {
-				t.Fatalf("CSP() = %q\nwant %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestCatalogCSPDerivedFollowsRow 按行派生随生效行切换（§9.4 与 Current 同源、
-// 热更新语义一致）：两行 capjs 各自 widget_api_base，切键即换派生 origin——
-// 逐字断言即证 A 行不混入 B 行源。
-func TestCatalogCSPDerivedFollowsRow(t *testing.T) {
-	rows := map[string]*provider.Provider{
-		"cap_a": {Key: "cap_a", Type: TypeCapjs, Row: captchaRow("cap_a", TypeCapjs, 1, "a"),
-			Ext: &providerpb.Ext{WidgetApiBase: "https://a.example.com"}},
-		"cap_b": {Key: "cap_b", Type: TypeCapjs, Row: captchaRow("cap_b", TypeCapjs, 1, "b"),
-			Ext: &providerpb.Ext{WidgetApiBase: "https://b.example.com"}},
-	}
-	keys := mapKeys{settings.KeyCaptchaProviderKey: "cap_a"}
-	c := NewCatalog(keys, &fakeSource{rows: rows})
-	for _, tc := range []struct{ key, want string }{
-		{"cap_a", "connect-src https://a.example.com; worker-src blob:"},
-		{"cap_b", "connect-src https://b.example.com; worker-src blob:"},
-		{"cap_a", "connect-src https://a.example.com; worker-src blob:"},
-	} {
-		keys[settings.KeyCaptchaProviderKey] = tc.key
-		if got := c.CSP(); got != tc.want {
-			t.Fatalf("生效行 %s: CSP() = %q\nwant %q（派生源随生效行切换）", tc.key, got, tc.want)
-		}
-	}
-}
-
 // TestCatalogCSPWhitelistClosesDirectives 白名单封闭语义（§8：可扩展指令
-// 白名单仅五项，白名单外指令的声明一律不生效）：探针 type 同时声明白名单内
+// 白名单仅三项，白名单外指令的声明一律不生效）：探针 type 同时声明白名单内
 // frame-src 与白名单外 script-src，输出含 frame-src、不含 script-src——
 // 聚合只遍历白名单指令序，多出的声明静默丢弃。
 func TestCatalogCSPWhitelistClosesDirectives(t *testing.T) {
@@ -287,45 +176,5 @@ func TestCatalogCSPWhitelistClosesDirectives(t *testing.T) {
 	}
 	if strings.Contains(got, "evil.example") || strings.Contains(got, "script-src") {
 		t.Fatalf("CSP() = %q, 白名单外指令与源泄漏进输出", got)
-	}
-}
-
-// cspDerivedProbeOnce 派生探针只注册一次（防 -count 重复注册 panic）。
-var cspDerivedProbeOnce sync.Once
-
-// TestCatalogCSPDerivedMerge 静态 + 派生聚合（§9.4：同一白名单过滤、静态
-// 在前、去重保序）：探针 type 静态声明 frame-src / connect-src，派生声明
-// 含静态重复源、新增源与白名单外 script-src——输出静态源在前、去重保序、
-// 白名单外派生声明不生效。
-func TestCatalogCSPDerivedMerge(t *testing.T) {
-	cspDerivedProbeOnce.Do(func() {
-		provider.RegisterVerifier("csp_derived_probe", provider.Meta{
-			DisplayName: "CSP 派生探针",
-			Category:    provider.CategoryCaptcha,
-			CSPSources: map[string][]string{
-				"frame-src":   {"https://static.example"},
-				"connect-src": {"https://shared.example"},
-			},
-			CSPSourcesOf: func(*provider.Provider) map[string][]string {
-				return map[string][]string{
-					"frame-src":   {"https://static.example", "https://derived.example"},
-					"connect-src": {"https://shared.example"},
-					"script-src":  {"https://evil.example"},
-				}
-			},
-		}, func(*provider.Provider) (provider.Verifier, error) { return nil, nil })
-	})
-	c := NewCatalog(
-		mapKeys{settings.KeyCaptchaProviderKey: "probe_d"},
-		&fakeSource{rows: map[string]*provider.Provider{
-			"probe_d": {Key: "probe_d", Type: "csp_derived_probe", Row: captchaRow("probe_d", "csp_derived_probe", 1, "")},
-		}},
-	)
-	got := c.CSP()
-	if want := "frame-src https://static.example https://derived.example; connect-src https://shared.example"; got != want {
-		t.Fatalf("CSP() = %q\nwant %q（静态在前、去重保序）", got, want)
-	}
-	if strings.Contains(got, "evil.example") || strings.Contains(got, "script-src") {
-		t.Fatalf("CSP() = %q, 派生声明中白名单外指令泄漏进输出", got)
 	}
 }

@@ -245,8 +245,9 @@ func TestSetupPageShell(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
-	// CSP 终稿基线（§8 行 1521-1532）：style-src 带 nonce、img-src
-	// 含 data: 与 https:、connect-src 'self'，禁 unsafe-inline。
+	// CSP 终稿基线（§8 逐项表）：object-src 'none' / base-uri 'self' /
+	// script-src 带 nonce + strict-dynamic / style-src 带 nonce / worker-src
+	// 'self'，禁 unsafe-inline。
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonceRe := regexp.MustCompile(`'nonce-([A-Za-z0-9_-]{20,})'`)
 	m := nonceRe.FindStringSubmatch(csp)
@@ -255,12 +256,11 @@ func TestSetupPageShell(t *testing.T) {
 	}
 	nonce := m[1]
 	for _, want := range []string{
-		"default-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self'",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self'",
+		"worker-src 'self'",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP 缺终稿指令 %q: %s", want, csp)

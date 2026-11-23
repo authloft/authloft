@@ -115,7 +115,7 @@ func newProvider(endpoint string) *provider.Provider {
 
 // TestGeetestV4Registered 注册表断言（§15.3）：meta 缺位即 blank import 被
 // 删；Schema 差异字段（widget_product 三选一 default bind、widget_options
-// 可选 advanced）与 CSP 登记（frame-src / connect-src）随实现声明。
+// 可选 advanced）与 CSP 登记（frame-src）随实现声明。
 func TestGeetestV4Registered(t *testing.T) {
 	meta, ok := provider.Lookup(Type)
 	if !ok {
@@ -166,9 +166,6 @@ func TestGeetestV4Registered(t *testing.T) {
 	}
 	if src := meta.CSPSources["frame-src"]; len(src) != 1 || src[0] != "https://gcaptcha4.geetest.com" {
 		t.Errorf("frame-src = %v, want [https://gcaptcha4.geetest.com]", src)
-	}
-	if src := meta.CSPSources["connect-src"]; len(src) != 1 || src[0] != "https://gcaptcha4.geetest.com" {
-		t.Errorf("connect-src = %v, want [https://gcaptcha4.geetest.com]", src)
 	}
 }
 

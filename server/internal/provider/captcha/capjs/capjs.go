@@ -11,7 +11,6 @@ package capjs
 
 import (
 	"errors"
-	"net/url"
 	"strings"
 
 	"authloft/internal/provider"
@@ -32,15 +31,9 @@ func init() {
 		Schema:      schema,
 		// CSP 源声明随实现走（§9.4；源值 = 接口文档 §8 参考源清单 capjs 行，
 		// 不在 csp.go 写死厂商域）：worker-src blob: 放行 PoW Web Worker。
-		// connect-src 属「按行配置派生源」（自托管域名不可枚举，静态登记
-		// 表达不了）：取当前生效行 widget_api_base 的 origin——前端拼
-		// <base>/<site key>/ 加载 widget 与 challenge/redeem，浏览器侧仅
-		// 触达该 origin（endpoint 仅服务端 siteverify 出站，不经浏览器
-		// CSP）；未配置行不贡献任何域名。
 		CSPSources: map[string][]string{
 			"worker-src": {"blob:"},
 		},
-		CSPSourcesOf: cspSourcesOf,
 	}, newVerifier)
 }
 
@@ -96,39 +89,4 @@ func deriveVerifyURL(base, siteKey string) string {
 		return ""
 	}
 	return base + "/" + siteKey + "/siteverify"
-}
-
-// cspSourcesOf 按行派生 connect-src（provider.Meta.CSPSourcesOf，§9.4
-// 「按行配置派生源」）：源值 = 当前生效行 widget_api_base 的 origin
-// （接口文档 §8 capjs 行）。未配置 / 派生不出 origin 时返回 nil，
-// 不贡献任何域名。
-func cspSourcesOf(p *provider.Provider) map[string][]string {
-	if origin := widgetAPIOrigin(p); origin != "" {
-		return map[string][]string{"connect-src": {origin}}
-	}
-	return nil
-}
-
-// widgetAPIOrigin widget_api_base 的 origin（scheme://host[:port]，路径与
-// 尾斜杠丢弃——前端拼 <base>/<site key>/ 后浏览器实际触达的即是该 origin）。
-// scheme 缺省按 https 补全（自托管明文 http 需显式声明）；空 / 非法 URL /
-// 无 host 返回空串，不派生不猜测。
-func widgetAPIOrigin(p *provider.Provider) string {
-	if p == nil || p.Ext == nil {
-		return ""
-	}
-	base := strings.TrimSpace(p.Ext.GetWidgetApiBase())
-	if base == "" {
-		return ""
-	}
-	if !strings.Contains(base, "://") {
-		// scheme 缺省 https；先剥协议相对前缀防 host 落进 path
-		//（"https://" + "//host" 解析不出 host）。
-		base = "https://" + strings.TrimPrefix(base, "//")
-	}
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
 }

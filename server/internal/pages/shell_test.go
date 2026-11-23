@@ -277,17 +277,17 @@ func initJSON(t *testing.T, body string) string {
 // fallbackCSP 未经中间件路径的自设 CSP 头（render.go cspDirectives 终稿
 // 形态，static_base 同域时）。
 func fallbackCSP(nonce string) string {
-	return "default-src 'self'; script-src 'nonce-" + nonce + "' 'strict-dynamic'; " +
-		"style-src 'nonce-" + nonce + "' 'self'; font-src 'self'; " +
-		"img-src 'self' data: https:; connect-src 'self'"
+	return "object-src 'none'; base-uri 'self'; " +
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic'; " +
+		"style-src 'nonce-" + nonce + "' 'self'; worker-src 'self'"
 }
 
-// nonceFromCSP 从 CSP 头提取 script-src 的 nonce（script-src 在 style-src
-// 之前，头两段形态固定：default-src 'self'; script-src 'nonce-…'）。
+// nonceFromCSP 从 CSP 头提取 script-src 的 nonce（头三段形态固定：
+// object-src 'none'; base-uri 'self'; script-src 'nonce-…'）。
 func nonceFromCSP(t *testing.T, csp string) string {
 	t.Helper()
 	const (
-		head = "default-src 'self'; script-src 'nonce-"
+		head = "object-src 'none'; base-uri 'self'; script-src 'nonce-"
 		tail = "' 'strict-dynamic'"
 	)
 	if !strings.HasPrefix(csp, head) {
@@ -394,8 +394,9 @@ func TestPasswordPolicyInjected(t *testing.T) {
 // TestShellCSPConsumesMiddleware CSP 中间件路径（bootstrap 页面路由组同构
 // 挂法 r.Group("", middleware.CSP())）：RenderShell 消费 ctx 的
 // CSPNonceKey——body 全部 nonce 属性与中间件所设 CSP 头同 nonce（未自
-// 生成新值另设头）；头保持中间件终稿基线（style-src 带 nonce、
-// strict-dynamic 在、connect-src 'self'）。
+// 生成新值另设头）；头保持中间件终稿基线（object-src 'none' / base-uri
+// 'self' / script-src 带 nonce + strict-dynamic / style-src 带 nonce /
+// worker-src 'self'）。
 func TestShellCSPConsumesMiddleware(t *testing.T) {
 	f := newFixture(t)
 	r := newEchoEngine()
@@ -405,10 +406,11 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonce := nonceFromCSP(t, csp)
 	for _, want := range []string{
+		"object-src 'none'",
+		"base-uri 'self'",
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self'",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self'",
+		"worker-src 'self'",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP 头缺终稿指令 %q：%s", want, csp)
@@ -421,8 +423,8 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 
 // TestShellCSPSupporterCDN 生产装配路径（bootstrap registerPages 同构）：
 // middleware.CSP 挂 pages.StaticBaseCSPSupporter——static_base 为 CDN
-// 绝对地址时 script / style / font 三指令与基线**合并单条输出**（基线源
-// 在前 + CDN 源追加，同名指令合并语义）；同域 /assets 时不追加。
+// 绝对地址时 script / style 两指令与基线**合并单条输出**（基线源在前 +
+// CDN 源追加，同名指令合并语义）；同域 /assets 时不追加。
 func TestShellCSPSupporterCDN(t *testing.T) {
 	f := newFixture(t)
 	r := newEchoEngine()
@@ -433,17 +435,16 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonce := nonceFromCSP(t, csp)
 	if got, want := csp, strings.Join([]string{
-		"default-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self'",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self'",
+		"worker-src 'self'",
 	}, "; "); got != want {
 		t.Errorf("同域 CSP = %q, want 基线 %q", got, want)
 	}
 
-	// CDN 绝对地址：三指令合并单条（基线源在前 + CDN 源追加；script-src
+	// CDN 绝对地址：两指令合并单条（基线源在前 + CDN 源追加；script-src
 	// CDN 源仅为 CSP2 回退）。
 	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
 	rec = doGet(t, r, "/admin")
@@ -452,21 +453,20 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 	for _, want := range []string{
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic' https://cdn.example.com",
 		"style-src 'nonce-" + nonce + "' 'self' https://cdn.example.com",
-		"font-src 'self' https://cdn.example.com",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CDN CSP 头缺合并指令 %q：%s", want, csp)
 		}
 	}
-	// 同名指令合并语义：三指令整串各只出现一次（接口文档 §8 行 1538）。
-	for _, d := range []string{"script-src", "style-src", "font-src"} {
+	// 同名指令合并语义：两指令整串各只出现一次（接口文档 §8）。
+	for _, d := range []string{"script-src", "style-src"} {
 		if n := strings.Count(csp, d); n != 1 {
 			t.Errorf("CDN CSP 头 %s 出现 %d 次, want 1（同名指令单条输出）：%s", d, n, csp)
 		}
 	}
-	// img / connect / default 不追加（§8 表：https: 已覆盖 CDN、API 恒同源）。
-	if strings.Contains(csp, "img-src https://cdn") || strings.Contains(csp, "connect-src https://") {
-		t.Errorf("img-src / connect-src 不追加 CDN 源：%s", csp)
+	// worker / object / base 不追加 CDN 源（资源类指令仅 script / style）。
+	if strings.Contains(csp, "worker-src https://") || strings.Contains(csp, "object-src https://") || strings.Contains(csp, "base-uri https://") {
+		t.Errorf("非资源类指令不追加 CDN 源：%s", csp)
 	}
 	// 每请求现算：改回同域后新请求无追加段。
 	f.settings.m[settings.KeyStaticBase] = "/assets"
@@ -498,7 +498,6 @@ func TestShellStaticBaseOverrides(t *testing.T) {
 	for _, want := range []string{
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic' https://cdn.example.com",
 		"style-src 'nonce-" + nonce + "' 'self' https://cdn.example.com",
-		"font-src 'self' https://cdn.example.com",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("自设 CSP 头缺 CDN 追加 %q：%s", want, csp)

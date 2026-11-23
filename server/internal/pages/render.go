@@ -121,28 +121,28 @@ func renderHTML(html string, init any, staticBase, nonce, varsJSON, siteName str
 	return []byte(html), nil
 }
 
-// cspDirectives CSP 终稿指令串（接口文档 §8 行 1521-1532 逐项表，
-// 正常模式与 setup 模式统一基线）——RenderShell 未经中间件时的自设头
-// 与单测共用：default-src 'self'；script-src 'nonce-…' 'strict-dynamic'；
-// style-src 'nonce-…' 'self'；font-src 'self'；img-src 'self' data:
-// https:；connect-src 'self'。static_base 为 CDN 绝对地址（http(s):// 开头）
-// 时 script / style / font 三条资源类指令追加该 CDN 源——script-src 的
-// CDN 源仅为不支持 strict-dynamic 的旧浏览器回退（CSP3 下 host 源被忽略，
-// §8 行 1526 注）；img-src 的 https: 已覆盖 CDN、connect-src 恒同源
-// （API 与页面恒同源、不经 CDN），两者不追加。
+// cspDirectives CSP 终稿指令串（接口文档 §8 逐项表，正常模式与 setup
+// 模式统一基线）——RenderShell 未经中间件时的自设头与单测共用：
+// object-src 'none'；base-uri 'self'；script-src 'nonce-…' 'strict-dynamic'；
+// style-src 'nonce-…' 'self'；worker-src 'self'。static_base 为 CDN
+// 绝对地址（http(s):// 开头）时 script / style 两条指令追加该 CDN 源——
+// script-src 的 CDN 源仅为不支持 strict-dynamic 的旧浏览器回退（CSP3
+// 下 host 源被忽略，§8）。
 func cspDirectives(nonce, staticBase string) string {
 	directives := []string{
-		"default-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
 		"style-src 'nonce-" + nonce + "' 'self'",
-		"font-src 'self'",
-		"img-src 'self' data: https:",
-		"connect-src 'self'",
+		"worker-src 'self'",
 	}
 	if origin := cdnOrigin(staticBase); origin != "" {
-		directives[1] += " " + origin
-		directives[2] += " " + origin
-		directives[3] += " " + origin
+		// 按指令名定位而非固定下标：指令序调整时不会把 CDN 源加到别的指令上。
+		for i, directive := range directives {
+			if strings.HasPrefix(directive, "script-src ") || strings.HasPrefix(directive, "style-src ") {
+				directives[i] += " " + origin
+			}
+		}
 	}
 	return strings.Join(directives, "; ")
 }
@@ -173,8 +173,7 @@ func StaticBaseCSPSupporter(s SettingsReader) middleware.CSPSupporter {
 }
 
 // CSP 每请求读 settings 键 static_base（§5.6，可热更），为 CDN 绝对地址时
-// 追加三条资源类指令（script / style / font 各追加 CDN 源；语义注记见
-// cspDirectives）。
+// 追加两条指令（script / style 各追加 CDN 源；语义注记见 cspDirectives）。
 func (s staticBaseCSP) CSP() string {
 	if s.settings == nil {
 		return ""
@@ -187,7 +186,7 @@ func (s staticBaseCSP) CSP() string {
 	if origin == "" {
 		return ""
 	}
-	return "script-src " + origin + "; style-src " + origin + "; font-src " + origin
+	return "script-src " + origin + "; style-src " + origin
 }
 
 // builtinTemplates 内置模板常驻内存表（§3.13）：由 InitBuiltinTemplates

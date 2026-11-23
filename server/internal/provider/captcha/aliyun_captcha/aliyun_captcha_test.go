@@ -127,8 +127,8 @@ func newProvider(endpoint string) *provider.Provider {
 
 // TestAliyunCaptchaRegistered 注册表断言（§15.3）：meta 缺位即 blank import
 // 被删；Schema 差异字段（access_key_id / region / prefix / encrypt_key /
-// widget_options，按接口文档 §5.3 行序）与 CSP 登记（connect-src 两地域
-// 域名）随实现声明。
+// widget_options，按接口文档 §5.3 行序）随实现声明。本 provider 不贡献
+// CSP 源（接口文档 §8）。
 func TestAliyunCaptchaRegistered(t *testing.T) {
 	meta, ok := provider.Lookup(Type)
 	if !ok {
@@ -186,59 +186,8 @@ func TestAliyunCaptchaRegistered(t *testing.T) {
 	if _, ok := got["is_enabled"]; ok {
 		t.Error("is_enabled 是 auth 专属开关，captcha 类别不得声明")
 	}
-	src := meta.CSPSources["connect-src"]
-	if len(src) != len(browserConnectSrc) {
-		t.Errorf("connect-src 数量 = %d, want %d", len(src), len(browserConnectSrc))
-	}
-	for i, want := range browserConnectSrc {
-		if i >= len(src) || src[i] != want {
-			t.Errorf("connect-src[%d] = %v, want %s", i, src, want)
-			break
-		}
-	}
-	for _, serverOnly := range []string{endpointCN, endpointSGP, endpointGA} {
-		for _, got := range src {
-			if got == serverOnly {
-				t.Errorf("connect-src 含服务端 RPC endpoint %s（不经浏览器，不应登记）", serverOnly)
-			}
-		}
-	}
-	if meta.CSPSourcesOf == nil {
-		t.Error("CSPSourcesOf 应声明（身份标子域按行派生）")
-	}
 	if _, ok := meta.CSPSources["frame-src"]; ok {
 		t.Error("frame-src 不应声明（弹层为 DOM 渲染无固定 iframe 域）")
-	}
-}
-
-// TestCSPSourcesOf 按行派生身份标子域：合法 prefix 派生 connect-src，
-// 空 / 非法（防注入）返回 nil 不贡献源。
-func TestCSPSourcesOf(t *testing.T) {
-	for _, tc := range []struct {
-		name, prefix, want string
-	}{
-		{"合法", "abc123", "https://abc123.captcha-open.aliyuncs.com"},
-		{"连字符下划线", "ab-c_1", "https://ab-c_1.captcha-open.aliyuncs.com"},
-		{"空", "", ""},
-		{"含点", "bad.example", ""},
-		{"含路径", "bad/path", ""},
-		{"含协议", "https://evil", ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := cspSourcesOf(&provider.Provider{Ext: &providerpb.Ext{Prefix: tc.prefix}})
-			if tc.want == "" {
-				if got != nil {
-					t.Fatalf("cspSourcesOf = %v, want nil", got)
-				}
-				return
-			}
-			if len(got["connect-src"]) != 1 || got["connect-src"][0] != tc.want {
-				t.Fatalf("cspSourcesOf = %v, want connect-src [%s]", got, tc.want)
-			}
-		})
-	}
-	if got := cspSourcesOf(nil); got != nil {
-		t.Errorf("cspSourcesOf(nil) = %v, want nil", got)
 	}
 }
 
