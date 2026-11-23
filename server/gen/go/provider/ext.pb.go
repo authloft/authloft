@@ -85,7 +85,7 @@ type Ext struct {
 	AccessKeyId string `protobuf:"bytes,55,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"` // 阿里云验证码 RPC 签名 AccessKeyId（client_secret 只承载 AccessKeySecret）
 	EncryptKey  string `protobuf:"bytes,56,opt,name=encrypt_key,json=encryptKey,proto3" json:"encrypt_key,omitempty"`      // 阿里云验证码加密模式 ekey（服务端生成 EncryptedSceneId，advanced 可选）
 	// ---- 消息扩展（57-63）----
-	Region              string `protobuf:"bytes,57,opt,name=region,proto3" json:"region,omitempty"`                                                        // 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp（select）
+	Region              string `protobuf:"bytes,57,opt,name=region,proto3" json:"region,omitempty"`                                                        // 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp|ga（select）
 	MessagingServiceSid string `protobuf:"bytes,58,opt,name=messaging_service_sid,json=messagingServiceSid,proto3" json:"messaging_service_sid,omitempty"` // Twilio Messaging Service SID（MG 前缀，与 from 二选一）
 	SandboxMode         bool   `protobuf:"varint,59,opt,name=sandbox_mode,json=sandboxMode,proto3" json:"sandbox_mode,omitempty"`                          // SendGrid 沙箱模式（true = 返回成功但不真发，联调用）
 	ReplyTo             string `protobuf:"bytes,60,opt,name=reply_to,json=replyTo,proto3" json:"reply_to,omitempty"`                                       // SendGrid 回复地址（reply_to.email）

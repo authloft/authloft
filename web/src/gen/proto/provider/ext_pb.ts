@@ -338,7 +338,7 @@ export type Ext = Message<"provider.Ext"> & {
   /**
    * ---- 消息扩展（57-63）----
    *
-   * 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp（select）
+   * 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp|ga（select）
    *
    * @generated from field: string region = 57;
    */
