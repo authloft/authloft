@@ -28,7 +28,11 @@ describe('ahooks 真实加载探针', () => {
         },
         { manual: true },
       );
-      return createElement('span', null, `${String(loading)}:${String(data)}:${String(error)}`);
+      return createElement(
+        'span',
+        null,
+        `${String(loading)}:${String(data)}:${String(error)}`,
+      );
     }
     const html = renderToStaticMarkup(createElement(Probe));
     expect(html).toContain('false:undefined:undefined');

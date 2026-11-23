@@ -11,6 +11,7 @@ import (
 
 	"database/sql"
 
+	"authloft/internal/contact"
 	"authloft/internal/factor"
 	core "authloft/internal/otp"
 	"authloft/internal/provider"
@@ -97,6 +98,12 @@ func (f *Factor) Start(ctx *factor.FactorContext) (*factor.StepResult, error) {
 	} else {
 		target = f.target(ctx.Payload)
 		if target == "" {
+			return &factor.StepResult{Status: StatusInvalidRequest}, nil
+		}
+		// 手机号统一 E.164（§1.11，裸号不兼容）：与 account / admin /
+		// orchestrator 共用 contact 校验，避免裸号经注册 challenge 落库后
+		// 与前端 E.164 登录不匹配。MFA 目标取自库内已绑定号码，不在此校验。
+		if f.kind == factor.FactorOTPSMS && !contact.IsValidPhoneE164(target) {
 			return &factor.StepResult{Status: StatusInvalidRequest}, nil
 		}
 		user, err := f.findTarget(ctx, target)

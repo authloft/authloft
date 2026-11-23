@@ -83,12 +83,14 @@ describe('utils/validate provider_key（前端架构 §3.4：^[a-z0-9_]+$）', (
 });
 
 describe('utils/validate 手机号 / 邮箱（§1.11：体验性预校验，后端权威）', () => {
-  test('大陆 11 位手机号通过；位数不对 / 号段不对 / 空串拒绝', () => {
-    expect(isValidPhone('13800138000')).toBe(true);
-    expect(isValidPhone('19912345678')).toBe(true);
-    expect(isValidPhone('1380013800')).toBe(false); // 10 位
-    expect(isValidPhone('138001380001')).toBe(false); // 12 位
-    expect(isValidPhone('12800138000')).toBe(false); // 12 开头
+  test('E.164 国际号通过；裸号 / 非法格式 / 空串拒绝', () => {
+    expect(isValidPhone('+8613800138000')).toBe(true);
+    expect(isValidPhone('+12025550100')).toBe(true);
+    expect(isValidPhone('+85291234567')).toBe(true);
+    expect(isValidPhone('13800138000')).toBe(false); // 裸号缺 +
+    expect(isValidPhone('19912345678')).toBe(false); // 裸号缺 +
+    expect(isValidPhone('+8613800138000a')).toBe(false); // 含非数字
+    expect(isValidPhone('+0123456789')).toBe(false); // + 后首位为 0
     expect(isValidPhone('')).toBe(false);
   });
 

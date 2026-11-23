@@ -7,7 +7,7 @@
  * 包装层注入；本壳只负责结构、高亮、折叠与 hash 内路由导航。
  */
 import { useState, type ComponentProps, type ReactNode } from 'react';
-import { Breadcrumb, Dropdown, Layout, Nav } from '@douyinfe/semi-ui';
+import { Dropdown, Layout, Nav } from '@douyinfe/semi-ui';
 // NavItems 类型导入例外：大包入口（lib/es/index.d.ts）仅转出组件值，
 // 未转出该类型——经官方 exports 白名单内的 navigation 子路径做纯类型导入
 // （import type，编译期擦除、零运行时痕迹；CODE_GUIDE §4.1 第 21 条）。
@@ -16,7 +16,7 @@ import { useLocation, useNavigate } from '@modern-js/runtime/router';
 import { type AppRoute, matchActivePath } from '../nav-routes';
 import styles from './index.module.less';
 
-const { Sider, Header, Content } = Layout;
+const { Sider, Content } = Layout;
 
 /** 右上 Dropdown 菜单项数组（形态对齐 Semi Dropdown 的 menu 入参）。 */
 export type HeaderMenu = NonNullable<ComponentProps<typeof Dropdown>['menu']>;

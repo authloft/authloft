@@ -134,7 +134,8 @@ export const account = {
   'account.bindCurrentValue': '当前：{value}',
   'account.bindCurrentVerified': '当前：{value}（已验证）',
   'account.bindResendCountdown': '{seconds} 秒后可重发',
-  'account.phonePlaceholder': '请输入手机号',
+  // 两段式输入：区号由左侧下拉选择，本地号框不含区号。
+  'account.phonePlaceholder': '请输入手机号（不含区号）',
   'account.emailPlaceholder': '请输入邮箱',
   'account.sendCodeAction': '发送验证码',
 

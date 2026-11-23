@@ -236,7 +236,7 @@ func TestBindChallengeSuccess(t *testing.T) {
 		phone  bool
 		target string
 	}{
-		{"phone", true, "13800138000"},
+		{"phone", true, "+8613800138000"},
 		{"email", false, "user@example.com"},
 	}
 	for _, tc := range cases {
@@ -291,7 +291,7 @@ func TestBindChallengeCaptcha(t *testing.T) {
 	t.Run("required", func(t *testing.T) {
 		env := newBindTestEnv()
 		err := env.svc.BindPhone(context.Background(), bindTestUID,
-			BindPhoneInput{Step: bindStepChallenge, Target: "13800138000", Captcha: nil, IP: "9.9.9.9"})
+			BindPhoneInput{Step: bindStepChallenge, Target: "+8613800138000", Captcha: nil, IP: "9.9.9.9"})
 		if !errors.Is(err, ErrBindCaptchaRequired) {
 			t.Fatalf("err = %v, want ErrBindCaptchaRequired", err)
 		}
@@ -332,8 +332,8 @@ func TestBindChallengeCaptchaFailureCarriesGateConfig(t *testing.T) {
 		in           BindPhoneInput
 		wantSentinel error
 	}{
-		{"required", BindPhoneInput{Step: bindStepChallenge, Target: "13800138000"}, ErrBindCaptchaRequired},
-		{"invalid", BindPhoneInput{Step: bindStepChallenge, Target: "13800138000", Captcha: &captcha.Submission{ProviderKey: "builtin_image"}}, ErrBindCaptchaInvalid},
+		{"required", BindPhoneInput{Step: bindStepChallenge, Target: "+8613800138000"}, ErrBindCaptchaRequired},
+		{"invalid", BindPhoneInput{Step: bindStepChallenge, Target: "+8613800138000", Captcha: &captcha.Submission{ProviderKey: "builtin_image"}}, ErrBindCaptchaInvalid},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -359,8 +359,8 @@ func TestBindChallengeCaptchaFailureCarriesGateConfig(t *testing.T) {
 // 行 892）；零写码零发信。
 func TestBindChallengeTargetTaken(t *testing.T) {
 	env := newBindTestEnv()
-	env.users.occupied["13800138000"] = &model.User{ID: 10010, Username: "li_si"}
-	err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("13800138000"))
+	env.users.occupied["+8613800138000"] = &model.User{ID: 10010, Username: "li_si"}
+	err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("+8613800138000"))
 	if !errors.Is(err, ErrBindTargetTaken) {
 		t.Fatalf("err = %v, want ErrBindTargetTaken", err)
 	}
@@ -400,7 +400,7 @@ func TestBindChallengeTooManyRequests(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newBindTestEnv()
 			env.store.sendResult = tc.result
-			err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("13800138000"))
+			err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("+8613800138000"))
 			if !errors.Is(err, ErrBindTooManyRequests) {
 				t.Fatalf("err = %v, want ErrBindTooManyRequests", err)
 			}
@@ -422,7 +422,7 @@ func TestBindChallengeTooManyRequests(t *testing.T) {
 func TestBindChallengeProviderDisabled(t *testing.T) {
 	env := newBindTestEnv()
 	env.sender.err = provider.ErrChannelNotConfigured
-	err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("13800138000"))
+	err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("+8613800138000"))
 	if !errors.Is(err, ErrBindProviderDisabled) {
 		t.Fatalf("err = %v, want ErrBindProviderDisabled", err)
 	}
@@ -447,7 +447,7 @@ func TestBindVerifySuccess(t *testing.T) {
 		masked string
 		event  string
 	}{
-		{"phone", true, "13800138000", "138****8000", eventlog.EventBindPhone},
+		{"phone", true, "+8613800138000", "+86****8000", eventlog.EventBindPhone},
 		{"email", false, "user@example.com", "u***@example.com", eventlog.EventBindEmail},
 	}
 	for _, tc := range cases {
@@ -538,7 +538,7 @@ func TestBindVerifyInvalidCode(t *testing.T) {
 	env.store.verifyRes = cache.VerifyMismatch
 	env.store.attemptsLeft = 3
 	err := env.svc.BindPhone(context.Background(), bindTestUID,
-		BindPhoneInput{Step: bindStepVerify, Target: "13800138000", Code: "654321"})
+		BindPhoneInput{Step: bindStepVerify, Target: "+8613800138000", Code: "654321"})
 	if err == nil {
 		t.Fatal("verify 错码应失败")
 	}
@@ -578,7 +578,7 @@ func TestBindVerifyCodeExpired(t *testing.T) {
 	env := newBindTestEnv()
 	env.store.verifyRes = cache.VerifyMissing
 	err := env.svc.BindPhone(context.Background(), bindTestUID,
-		BindPhoneInput{Step: bindStepVerify, Target: "13800138000", Code: "123456"})
+		BindPhoneInput{Step: bindStepVerify, Target: "+8613800138000", Code: "123456"})
 	if !errors.Is(err, ErrBindCodeExpired) {
 		t.Fatalf("err = %v, want ErrBindCodeExpired", err)
 	}
@@ -597,9 +597,9 @@ func TestBindVerifyInvalidRequest(t *testing.T) {
 		code   string
 	}{
 		{"empty target", "   ", "123456"},
-		{"empty code", "13800138000", ""},
-		{"short code", "13800138000", "12345"},
-		{"non digits", "13800138000", "12ab45"},
+		{"empty code", "+8613800138000", ""},
+		{"short code", "+8613800138000", "12345"},
+		{"non digits", "+8613800138000", "12ab45"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -625,7 +625,7 @@ func TestBindVerifyTOCTOU(t *testing.T) {
 		// 同 repo 列级更新的冲突判别链（UserRepo.Create 的 1062 包装同源）。
 		env.users.updateErr = fmt.Errorf("user repo: update contact columns: %w: %w", repo.ErrUserDuplicate, errors.New("duplicate entry"))
 		err := env.svc.BindPhone(context.Background(), bindTestUID,
-			BindPhoneInput{Step: bindStepVerify, Target: "13800138000", Code: "123456"})
+			BindPhoneInput{Step: bindStepVerify, Target: "+8613800138000", Code: "123456"})
 		if !errors.Is(err, ErrBindTargetTaken) {
 			t.Fatalf("err = %v, want ErrBindTargetTaken（TOCTOU 唯一键冲突）", err)
 		}
@@ -654,7 +654,7 @@ func TestBindUserNotFound(t *testing.T) {
 	t.Run("challenge", func(t *testing.T) {
 		env := newBindTestEnv()
 		env.users.self = nil
-		err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("13800138000"))
+		err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone("+8613800138000"))
 		if !errors.Is(err, ErrBindUserNotFound) {
 			t.Fatalf("err = %v, want ErrBindUserNotFound", err)
 		}
@@ -690,7 +690,7 @@ func TestBindStepInvalid(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newBindTestEnv()
 			err := env.svc.BindPhone(context.Background(), bindTestUID,
-				BindPhoneInput{Step: tc.step, Target: "13800138000", Captcha: bindCaptchaOK(), Code: "123456"})
+				BindPhoneInput{Step: tc.step, Target: "+8613800138000", Captcha: bindCaptchaOK(), Code: "123456"})
 			if !errors.Is(err, ErrBindInvalidRequest) {
 				t.Fatalf("err = %v, want ErrBindInvalidRequest", err)
 			}
@@ -699,12 +699,72 @@ func TestBindStepInvalid(t *testing.T) {
 	}
 }
 
+// TestBindPhoneE164Validation 入口统一 E.164 校验：裸号 / 非法格式一律
+// invalid_request 且零副作用（不兼容旧格式，§3.4）；合法 E.164 放行，
+// challenge 与 verify 归一化后 target 形态一致，写码键与查找键同源。
+func TestBindPhoneE164Validation(t *testing.T) {
+	invalid := []struct {
+		name   string
+		target string
+	}{
+		{"bare 11 digits", "13800138000"},
+		{"no plus", "8613800138000"},
+		{"country code starts zero", "+08613800138000"},
+		{"too many digits (16)", "+8613800138000000"},
+		{"trailing junk", "+8613800138000x"},
+		{"empty", ""},
+	}
+	for _, tc := range invalid {
+		t.Run("challenge/"+tc.name, func(t *testing.T) {
+			env := newBindTestEnv()
+			err := env.svc.BindPhone(context.Background(), bindTestUID, bindChallengePhone(tc.target))
+			if !errors.Is(err, ErrBindInvalidRequest) {
+				t.Fatalf("err = %v, want ErrBindInvalidRequest", err)
+			}
+			bindNoSideEffects(t, env)
+		})
+		t.Run("verify/"+tc.name, func(t *testing.T) {
+			env := newBindTestEnv()
+			env.store.verifyRes = cache.VerifyOK
+			err := env.svc.BindPhone(context.Background(), bindTestUID,
+				BindPhoneInput{Step: bindStepVerify, Target: tc.target, Code: "123456"})
+			if !errors.Is(err, ErrBindInvalidRequest) {
+				t.Fatalf("err = %v, want ErrBindInvalidRequest", err)
+			}
+			if len(env.store.verifies) != 0 {
+				t.Errorf("非法格式不应触存储，实际 %d 次", len(env.store.verifies))
+			}
+		})
+	}
+
+	t.Run("normalized target shared by challenge and verify", func(t *testing.T) {
+		env := newBindTestEnv()
+		env.store.verifyRes = cache.VerifyOK
+		padded := "  +8613800138000  "
+		ctx := context.Background()
+		if err := env.svc.BindPhone(ctx, bindTestUID, bindChallengePhone(padded)); err != nil {
+			t.Fatalf("challenge = %v, want nil", err)
+		}
+		env.store.verifyRes = cache.VerifyOK
+		if err := env.svc.BindPhone(ctx, bindTestUID,
+			BindPhoneInput{Step: bindStepVerify, Target: padded, Code: "123456"}); err != nil {
+			t.Fatalf("verify = %v, want nil", err)
+		}
+		if len(env.store.sends) != 1 || env.store.sends[0].target != "+8613800138000" {
+			t.Fatalf("写码 target = %v, want 归一化 E.164", env.store.sends)
+		}
+		if len(env.store.verifies) != 1 || env.store.verifies[0].target != "+8613800138000" {
+			t.Fatalf("校验 target = %v, want 与写码同一形态", env.store.verifies)
+		}
+	})
+}
+
 // TestBindSourceIPFallback IP 空值兜底 "unknown"（factor/otp clientIP 同款：
 // 避免空键绕过单 IP 日限额，§10.3）。
 func TestBindSourceIPFallback(t *testing.T) {
 	env := newBindTestEnv()
 	err := env.svc.BindPhone(context.Background(), bindTestUID,
-		BindPhoneInput{Step: bindStepChallenge, Target: "13800138000", Captcha: bindCaptchaOK()})
+		BindPhoneInput{Step: bindStepChallenge, Target: "+8613800138000", Captcha: bindCaptchaOK()})
 	if err != nil {
 		t.Fatalf("challenge = %v, want nil", err)
 	}
@@ -714,10 +774,14 @@ func TestBindSourceIPFallback(t *testing.T) {
 }
 
 // TestBindMask 电话 / 邮箱掩码边界（与 dto 版同构：前 3+****+后 4；本地
-// 首字符+***+域名；短号码整体 ****；无 @ 仅 ***）。
+// 首字符+***+域名；短号码整体 ****；无 @ 仅 ***）。E.164 号码保留区号
+// 前缀与尾号，仅遮蔽中间段。
 func TestBindMask(t *testing.T) {
+	if got := bindMaskPhone("+8613800138000"); got != "+86****8000" {
+		t.Errorf("maskPhone(E.164) = %q", got)
+	}
 	if got := bindMaskPhone("13800138000"); got != "138****8000" {
-		t.Errorf("maskPhone = %q", got)
+		t.Errorf("maskPhone(裸号) = %q", got)
 	}
 	if got := bindMaskPhone("1234567"); got != "****" {
 		t.Errorf("maskPhone(7 位) = %q, want ****", got)

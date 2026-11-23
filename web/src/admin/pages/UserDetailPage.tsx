@@ -38,8 +38,10 @@ import {
   Toast,
   Typography,
   Modal,
+  withField,
 } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
+import { PhoneInput } from '../../shared/components/PhoneInput';
 import {
   initialTableQuery,
   type TableQueryState,
@@ -91,6 +93,10 @@ import {
   type UserWriteVisibility,
 } from '../api';
 import styles from './UserDetailPage.module.less';
+
+// 共用 PhoneInput 本身零第三方 UI 依赖；此处经 Semi 的 withField 接管
+// value / onChange，使管理员录入的 E.164 直接进 Form 的 phone 字段。
+const FormPhoneInput = withField(PhoneInput);
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 '' / 0n）。 */
 const EMPTY_TEXT = '—';
@@ -549,11 +555,13 @@ export function UserDetail(props: {
                 disabled={writeBusy}
                 allowEmptyString
               />
-              <Form.Input
+              <FormPhoneInput
                 field="phone"
                 label={t('admin.phoneLabel')}
                 disabled={writeBusy}
                 allowEmptyString
+                // withField 运行时接管 onChange；占位仅为满足受控签名。
+                onChange={() => {}}
               />
               <Form.Input
                 field="email"

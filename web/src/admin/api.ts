@@ -140,7 +140,6 @@ import {
   UpdateUserStatusRequestSchema,
 } from '../gen/proto/api/admin/v1/user_pb';
 import type { MfaResponse } from '../gen/proto/api/account/v1/mfa_pb';
-import type { UserProfile } from '../gen/proto/api/account/v1/profile_pb';
 import { UserProfileSchema } from '../gen/proto/api/account/v1/profile_pb';
 import {
   isAvatarUrlWithinLimit,

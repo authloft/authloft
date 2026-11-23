@@ -468,7 +468,7 @@ func TestRegisterSignupDisabledSwitches(t *testing.T) {
 		{
 			name:  "allow_signup_phone=false otp_sms challenge",
 			key:   settings.KeyAllowSignupPhone,
-			req:   Request{Method: "otp_sms", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Phone: "13800138000"}},
+			req:   Request{Method: "otp_sms", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Phone: "+8613800138000"}},
 			setup: func(r *fakeRegistry) { r.factors[factor.FactorOTPSMS] = otpSMSFactor() },
 		},
 		{
@@ -596,6 +596,36 @@ func TestRegisterTargetTaken(t *testing.T) {
 	}
 	if len(fk.users.created) != 0 {
 		t.Fatalf("created = %d, want 0", len(fk.users.created))
+	}
+}
+
+// TestRegisterRejectsBarePhone 落库前自守：构造的 login_token 若带裸号 target，
+// set_password 必须拒绝而非建出无法用 E.164 登录的账号（§1.11）。
+func TestRegisterRejectsBarePhone(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	state := testState(t, at)
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorOTPSMS] = otpSMSFactor()
+	fk := newSetPassFakes()
+	e := deps.engine(state)
+	e.setpass = fk.deps(deps.settings)
+
+	tok, err := state.Issue(&token.LoginTokenPayload{
+		Tid: "tid-1", Flow: "register", Factor: "otp_sms", Passed: []string{"otp_sms"},
+		Ch: &token.Challenge{Purpose: "register", Target: "13800138000"},
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tok, Method: "otp_sms", Step: "set_password",
+		Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword},
+	})
+	if got.Status != StatusInvalidRequest {
+		t.Fatalf("status = %q, want invalid_request", got.Status)
+	}
+	if len(fk.users.created) != 0 {
+		t.Fatalf("created = %d, want 0（裸号不得落库）", len(fk.users.created))
 	}
 }
 

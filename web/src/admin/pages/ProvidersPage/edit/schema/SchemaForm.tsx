@@ -18,7 +18,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import type { ReactNode } from 'react';
-import { Col, Collapse, Form, Row } from '@douyinfe/semi-ui';
+import { Collapse, Form } from '@douyinfe/semi-ui';
 import type {
   SchemaField,
   SchemaResponse,

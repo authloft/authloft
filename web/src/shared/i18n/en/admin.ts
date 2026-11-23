@@ -396,7 +396,8 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.widgetScriptUrlHelp':
     'Empty = official CDN; for self-hosting point to the assets script under the base URL',
   'admin.schemaField.widgetProductLabel': 'Frontend Mode',
-  'admin.schemaField.widgetProductHelp': 'GeeTest v4 interaction mode; defaults to bind',
+  'admin.schemaField.widgetProductHelp':
+    'GeeTest v4 interaction mode; defaults to bind',
   'admin.schemaField.widgetOptionsLabel': 'Frontend Init Options',
   'admin.schemaField.widgetOptionsHelp':
     'JSON text passed through to frontend init (e.g. language / mode), advanced',

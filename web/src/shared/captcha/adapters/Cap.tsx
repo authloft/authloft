@@ -96,8 +96,7 @@ export class CapAdapter extends VendorChallengeAdapter<CapVendorApi> {
     widget.setAttribute('data-cap-api-endpoint', endpoint);
     widget.addEventListener('solve', (event: Event) => {
       const detail = (event as CustomEvent).detail as
-        | CapSolveEventDetail
-        | undefined;
+        CapSolveEventDetail | undefined;
       const token = detail?.token;
       // 空串不置位（基座 acceptToken 同口径），未完成 → getToken undefined。
       if (typeof token === 'string') {

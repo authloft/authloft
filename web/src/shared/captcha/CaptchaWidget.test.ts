@@ -14,11 +14,7 @@ import {
   CaptchaConfigSchema,
   type CaptchaConfig,
 } from '../../gen/proto/api/common/v1/captcha_pb';
-import {
-  CaptchaWidget,
-  adapterFactoryFor,
-  adapterKey,
-} from './CaptchaWidget';
+import { CaptchaWidget, adapterFactoryFor, adapterKey } from './CaptchaWidget';
 import { createAliyunCaptchaAdapter } from './adapters/AliyunCaptcha';
 import { createCapAdapter } from './adapters/Cap';
 import { createGeetestAdapter } from './adapters/Geetest';
@@ -69,14 +65,28 @@ describe('adapterFactoryFor 分派（§3.5 行 350；§2.5 行 500 四种 type +
 
 describe('adapterKey 重建判据（§3.5 行 361：权威来源变化按新 type 重渲染）', () => {
   test('同值不重建（对象换引用、值不变 → key 相同）', () => {
-    const a = makeCaptcha({ providerKey: 'cf_turnstile', type: 'turnstile', siteKey: '0x4AAA' });
-    const b = makeCaptcha({ providerKey: 'cf_turnstile', type: 'turnstile', siteKey: '0x4AAA' });
+    const a = makeCaptcha({
+      providerKey: 'cf_turnstile',
+      type: 'turnstile',
+      siteKey: '0x4AAA',
+    });
+    const b = makeCaptcha({
+      providerKey: 'cf_turnstile',
+      type: 'turnstile',
+      siteKey: '0x4AAA',
+    });
     expect(adapterKey(a)).toBe(adapterKey(b));
   });
 
   test('type 变（含服务端降级 image）→ key 变', () => {
-    const before = makeCaptcha({ providerKey: 'cf_turnstile', type: 'turnstile' });
-    const degraded = makeCaptcha({ providerKey: 'builtin_image', type: 'image' });
+    const before = makeCaptcha({
+      providerKey: 'cf_turnstile',
+      type: 'turnstile',
+    });
+    const degraded = makeCaptcha({
+      providerKey: 'builtin_image',
+      type: 'image',
+    });
     expect(adapterKey(before)).not.toBe(adapterKey(degraded));
     // 同 providerKey 仅 type 变也重建
     const x = makeCaptcha({ providerKey: 'p', type: 'turnstile' });
@@ -90,7 +100,9 @@ describe('adapterKey 重建判据（§3.5 行 361：权威来源变化按新 typ
       adapterKey(makeCaptcha({ providerKey: 'b', type: 'image', siteKey: '' })),
     ).not.toBe(adapterKey(base));
     expect(
-      adapterKey(makeCaptcha({ providerKey: 'a', type: 'image', siteKey: 's' })),
+      adapterKey(
+        makeCaptcha({ providerKey: 'a', type: 'image', siteKey: 's' }),
+      ),
     ).not.toBe(adapterKey(base));
   });
 });

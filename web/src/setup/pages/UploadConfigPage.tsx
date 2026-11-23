@@ -45,22 +45,27 @@ export default function UploadConfigPage({
   // 提交改 ahooks manual + onError 覆盖（§5.4-#5）——admin_missing
   // 是分支动作（§13.2 ④：Banner + Modal），不走集中 Toast；其余 Toast。
   // 成功经 onSuccess 进入重启流程（错误进 onError，run 不 rethrow）。
-  const { run: uploadRun, loading: submitting } = useRequest(requestUploadConfig, {
-    manual: true,
-    onSuccess: () => {
-      // §13.2：成功响应 restarting:true，进入与全新安装一致的重启流程。
-      onRestarting();
+  const { run: uploadRun, loading: submitting } = useRequest(
+    requestUploadConfig,
+    {
+      manual: true,
+      onSuccess: () => {
+        // §13.2：成功响应 restarting:true，进入与全新安装一致的重启流程。
+        onRestarting();
+      },
+      onError: (error) => {
+        if (error instanceof ApiError && error.code === 'admin_missing') {
+          setAdminMissing(true);
+        } else {
+          Toast.error({
+            content: setupMessage(
+              error instanceof ApiError ? error.code : 'internal',
+            ),
+          });
+        }
+      },
     },
-    onError: (error) => {
-      if (error instanceof ApiError && error.code === 'admin_missing') {
-        setAdminMissing(true);
-      } else {
-        Toast.error({
-          content: setupMessage(error instanceof ApiError ? error.code : 'internal'),
-        });
-      }
-    },
-  });
+  );
 
   // 提交态上抛（Steps current 推进 + 锁步骤跳转），随请求状态联动。
   useEffect(() => {

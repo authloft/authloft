@@ -20,7 +20,9 @@ export function resolveIconMode(
   icon: string | undefined,
   loadFailed: boolean,
 ): ProviderIconMode {
-  return icon !== undefined && icon !== '' && !loadFailed ? 'image' : 'placeholder';
+  return icon !== undefined && icon !== '' && !loadFailed
+    ? 'image'
+    : 'placeholder';
 }
 
 export interface ProviderIconProps {
@@ -77,7 +79,11 @@ export function ProviderIcon({ icon, alt }: ProviderIconProps) {
     );
   }
   return (
-    <span className={styles.icon} role="img" aria-label={alt || t('common.providerIconAlt')}>
+    <span
+      className={styles.icon}
+      role="img"
+      aria-label={alt || t('common.providerIconAlt')}
+    >
       <PlaceholderGlyph />
     </span>
   );

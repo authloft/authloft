@@ -26,7 +26,8 @@ import RestartingPage from './RestartingPage';
 import UploadConfigPage from './UploadConfigPage';
 import styles from './SetupPage.module.less';
 
-type Phase = 'checking' | 'installed' | 'choice' | 'upload' | 'install' | 'restarting';
+type Phase =
+  'checking' | 'installed' | 'choice' | 'upload' | 'install' | 'restarting';
 
 /** Steps 步序（§11.3 目标形态）：提交中视为「执行安装」步。 */
 function stepCurrent(phase: Phase, submitting: boolean): number {
@@ -114,7 +115,9 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
       case 'choice':
         return (
           <>
-            <Typography.Title heading={3}>{t('setup.initTitle')}</Typography.Title>
+            <Typography.Title heading={3}>
+              {t('setup.initTitle')}
+            </Typography.Title>
             <Typography.Paragraph type="secondary">
               {t('setup.setupModeDetected')}
             </Typography.Paragraph>

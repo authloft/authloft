@@ -45,13 +45,19 @@ describe('createInflightGuard（per-row 防重：在途期间重复触发 no-op�
         return false;
       }
       try {
-        await runInlineToggle([{ id: 'u1', on: false }], (row) => row.id, 'u1', (row) => ({
-          ...row,
-          on: true,
-        }), async () => {
-          persistCount += 1;
-          await gate;
-        });
+        await runInlineToggle(
+          [{ id: 'u1', on: false }],
+          (row) => row.id,
+          'u1',
+          (row) => ({
+            ...row,
+            on: true,
+          }),
+          async () => {
+            persistCount += 1;
+            await gate;
+          },
+        );
         return true;
       } finally {
         guard.leave('u1');

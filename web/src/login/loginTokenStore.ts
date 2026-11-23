@@ -37,9 +37,7 @@ export function clearLoginToken(): void {
 }
 
 /** 订阅变更；返回取消订阅函数。 */
-export function subscribeLoginToken(
-  listener: LoginTokenListener,
-): () => void {
+export function subscribeLoginToken(listener: LoginTokenListener): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

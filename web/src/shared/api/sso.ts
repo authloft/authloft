@@ -18,8 +18,14 @@
 import { ssoClient } from './http';
 import type { Message } from '@bufbuild/protobuf';
 import type { CreateCaptchaImageResponse } from '../../gen/proto/api/sso/v1/login_pb';
-import type { AuthorizeRequest, AuthorizeResponse } from '../../gen/proto/api/sso/v1/oauth_pb';
-import type { CreateQrcodeRequest, CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
+import type {
+  AuthorizeRequest,
+  AuthorizeResponse,
+} from '../../gen/proto/api/sso/v1/oauth_pb';
+import type {
+  CreateQrcodeRequest,
+  CreateQrcodeResponse,
+} from '../../gen/proto/api/sso/v1/ticket_pb';
 
 /**
  * 生成物消息 → init 形状（@connectrpc/connect 未导出该工具类型；
@@ -28,7 +34,9 @@ import type { CreateQrcodeRequest, CreateQrcodeResponse } from '../../gen/proto/
  * 一类平铺对象即可入参。
  */
 export type MessageInput<T> = {
-  [P in keyof T as P extends '$typeName' | '$unknown' ? never : P]?: MessageField<T[P]>;
+  [
+    P in keyof T as P extends '$typeName' | '$unknown' ? never : P
+  ]?: MessageField<T[P]>;
 };
 
 /** 嵌套字段递归：消息 → init；数组逐元素；其余（string / bigint / JsonObject）原样。 */

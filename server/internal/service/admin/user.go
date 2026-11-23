@@ -52,6 +52,7 @@ import (
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	credentialpb "authloft/gen/go/credential"
+	"authloft/internal/contact"
 	"authloft/internal/dto"
 	"authloft/internal/eventlog"
 	"authloft/internal/factor/ipres"
@@ -760,19 +761,16 @@ func (s *UserService) authorizeSuperadminActor(ctx context.Context, actor int64)
 	return nil
 }
 
-// contactPhonePattern / contactEmailPattern 非空联系方式的格式权威校验
-// （§1.11 phone / email「后端为唯一权威」；§5.4 PATCH 校验——违规
-// invalid_request）。与前端体验性预校验同式：手机号为中国大陆号段，
-// 邮箱为「无空白、恰一个 @、@ 两侧非空且域名含点」的宽松式。
-var (
-	contactPhonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
-	contactEmailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-)
+// contactEmailPattern 非空邮箱的格式权威校验（§1.11 email「后端为唯一权威」；
+// §5.4 PATCH 校验——违规 invalid_request）：无空白、恰一个 @、@ 两侧非空且
+// 域名含点的宽松式。手机号格式走 infra 公共校验 contact.IsValidPhoneE164，
+// 与 factor / account / orchestrator 同源（§1.11）。
+var contactEmailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
 // validContactFormat 非空值的格式校验（空串 = 显式清空，不在此校验）。
 func validContactFormat(kind, v string) bool {
 	if kind == "phone" {
-		return contactPhonePattern.MatchString(v)
+		return contact.IsValidPhoneE164(v)
 	}
 	return contactEmailPattern.MatchString(v)
 }

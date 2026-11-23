@@ -471,7 +471,7 @@ func TestEngineMFACaptchaSuccess(t *testing.T) {
 	deps.registry.factors[factor.FactorOTPSMS] = otpSMSFactor()
 	deps.settings.slices[settings.KeySsoDomains] = []string{"a.example", "b.example"}
 
-	phone := "13800138000"
+	phone := "+8613800138000"
 	email := "alice@example.com"
 	deps.users.user = &model.User{ID: 42, Phone: &phone, Email: &email, PhoneVerified: 1, EmailVerified: 1, MfaRequired: 1}
 	deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}

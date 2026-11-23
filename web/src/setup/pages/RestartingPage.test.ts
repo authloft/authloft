@@ -112,7 +112,10 @@ describe('setup/RestartingPage pollRestart（§13.4 重启轮询）', () => {
 
   test('恰好在 120s 时刻恢复 → 未超过超时线，按完成处理', async () => {
     const probeStub = probe([
-      ...Array.from({ length: 60 }, () => ({ kind: 'setup' }) as SetupStatusResult),
+      ...Array.from(
+        { length: 60 },
+        () => ({ kind: 'setup' }) as SetupStatusResult,
+      ),
       { kind: 'gone' },
     ]);
     const clock = fakeClock();

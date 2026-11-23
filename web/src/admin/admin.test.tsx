@@ -2368,7 +2368,7 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
       username: 'alice',
       nickname: 'Alice',
       avatarUrl: 'https://x.test/a.png',
-      phone: '13800138000',
+      phone: '+8613800138000',
       email: 'a@b.com',
       phoneVerified: '1',
       emailVerified: '1',
@@ -2385,7 +2385,7 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
   const unchangedDraft = {
     nickname: 'Alice',
     avatarUrl: 'https://x.test/a.png',
-    phone: '13800138000',
+    phone: '+8613800138000',
     email: 'a@b.com',
     gender: '1',
     birthday: '1990-01-02',
@@ -2486,6 +2486,21 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
     ).toBeNull();
   });
 
+  test('PATCH diff：PhoneInput 打字的 E.164 值直达 PATCH payload（不丢值）', async () => {
+    // withField 在 node 环境不可用（Semi 顶层 CSS 无法导入），故以数据链路
+    // 断言替代：PhoneInput 输出的 E.164 置于 draft.phone 后必须进 PATCH，
+    // 防止接线变更导致编辑值静默丢失。
+    const { joinE164 } = await import('../shared/components/PhoneInput');
+    const typed = joinE164('+852', '9123 4567');
+    expect(typed).toBe('+85291234567');
+    const contactReq = apiMod.buildUpdateUserContactRequest(
+      BigInt(2),
+      { ...unchangedDraft, phone: typed },
+      detail,
+    );
+    expect(contactReq?.phone).toBe(typed);
+  });
+
   test('PATCH diff：只提交变更键；联系方式显式空串 = 清空', () => {
     const changed = { ...unchangedDraft, nickname: 'Alicia', phone: '' };
     const profileReq = apiMod.buildUpdateUserProfileRequest(
@@ -2580,7 +2595,7 @@ describe('api 编辑 / 救援写方法（§5.4 新增七 RPC：msw wire 形态�
         id: '2',
         username: 'alice',
         nickname: 'Alice',
-        phone: '13800138000',
+        phone: '+8613800138000',
       },
     });
     const draft = {
@@ -2670,11 +2685,11 @@ describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下�
   test('门槛由真实 PATCH diff 驱动：只改联系方式 → confirm_contact', async () => {
     const { userEditSubmitGate } = await import('./pages/UserDetailPage');
     const detail = create(UserDetailResponseSchema, {
-      user: { id: '2', username: 'alice', phone: '13800138000' },
+      user: { id: '2', username: 'alice', phone: '+8613800138000' },
     });
     const draft = {
       ...apiMod.userEditDraftFromDetail(detail),
-      phone: '13900139000',
+      phone: '+8613900139000',
     };
     const profileReq = apiMod.buildUpdateUserProfileRequest(
       BigInt(2),

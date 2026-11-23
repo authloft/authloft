@@ -106,7 +106,7 @@ func TestShape(t *testing.T) {
 }
 
 func TestStartMFAUsesBoundTarget(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
@@ -114,7 +114,7 @@ func TestStartMFAUsesBoundTarget(t *testing.T) {
 			Uid: 7, Tid: "tid-1", Flow: "login", Passed: []string{"password"},
 			Ch: &token.Challenge{Purpose: "mfa"},
 		},
-		Payload: &factor.Payload{Phone: "13900000000"}, // 请求侧注入必须被忽略
+		Payload: &factor.Payload{Phone: "+8613900000000"}, // 请求侧注入必须被忽略
 		Users:   fakeUsers{byID: &model.User{ID: 7, Phone: &phone, PhoneVerified: 1}},
 	}
 	res, err := f.Start(ctx)
@@ -136,7 +136,7 @@ func TestStartPrimaryUserNotFound(t *testing.T) {
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
-		Payload: &factor.Payload{Phone: "13800000000"},
+		Payload: &factor.Payload{Phone: "+8613800138000"},
 		Users:   fakeUsers{byPhone: nil},
 	}
 	res, err := f.Start(ctx)
@@ -163,11 +163,34 @@ func TestStartPrimaryInvalidRequest(t *testing.T) {
 	}
 }
 
+// TestStartRejectsBarePhone 手机号主因子挑战只接受 E.164（§1.11）：裸号在
+// register 入口若放行会经 setpass 落库，之后前端 E.164 登录精确匹配不到。
+func TestStartRejectsBarePhone(t *testing.T) {
+	for _, flow := range []string{"register", "login", "reset"} {
+		f, st, sender := newFactor(t, factor.FactorOTPSMS)
+		res, err := f.Start(&factor.FactorContext{
+			Context: context.Background(),
+			Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: flow},
+			Payload: &factor.Payload{Phone: "13800138000"},
+			Users:   fakeUsers{byPhone: nil},
+		})
+		if err != nil {
+			t.Fatalf("flow %s Start: %v", flow, err)
+		}
+		if res.Status != StatusInvalidRequest {
+			t.Fatalf("flow %s Start = %+v, want invalid_request", flow, res)
+		}
+		if st.sendCalls != 0 || sender.calls != 0 {
+			t.Fatalf("flow %s: bare phone must not write code or send", flow)
+		}
+	}
+}
+
 // TestStartPrimaryWritesCodeWithTid engine 在 Start 之前已由 loadPayload 生成
 // tid / 选定 flow，首个 challenge 必须按 owner=tid、purpose=flow 写码
 // （§10.1 行 1121、§7.3 行 992）。
 func TestStartPrimaryWritesCodeWithTid(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
@@ -191,7 +214,7 @@ func TestStartPrimaryWritesCodeWithTid(t *testing.T) {
 }
 
 func TestStartCooldown(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	st.sendResult = cache.SendCooldown
 	ctx := &factor.FactorContext{
@@ -215,7 +238,7 @@ func TestStartCooldown(t *testing.T) {
 }
 
 func TestStartSenderError(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, _, sender := newFactor(t, factor.FactorOTPSMS)
 	sender.err = errors.New("smtp down")
 	ctx := &factor.FactorContext{
@@ -232,7 +255,7 @@ func TestStartSenderError(t *testing.T) {
 }
 
 func TestVerifyPrimarySuccess(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, _ := newFactor(t, factor.FactorOTPSMS)
 	st.verifyResult = cache.VerifyOK
 	ctx := &factor.FactorContext{
@@ -257,8 +280,8 @@ func TestVerifyPrimarySuccess(t *testing.T) {
 }
 
 func TestVerifySecondaryUsesBoundTarget(t *testing.T) {
-	phone := "13800000000"
-	other := "13900000000"
+	phone := "+8613800138000"
+	other := "+8613900000000"
 	f, st, _ := newFactor(t, factor.FactorOTPSMS)
 	st.verifyResult = cache.VerifyOK
 	ctx := &factor.FactorContext{
@@ -283,7 +306,7 @@ func TestVerifySecondaryUsesBoundTarget(t *testing.T) {
 }
 
 func TestVerifyOutcomes(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	cases := []struct {
 		name string
 		in   cache.VerifyResult
@@ -319,7 +342,7 @@ func TestVerifyMalformedCode(t *testing.T) {
 	f, st, _ := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
-		Login:   &token.LoginTokenPayload{Tid: "tid-1", Ch: &token.Challenge{Target: "13800000000"}},
+		Login:   &token.LoginTokenPayload{Tid: "tid-1", Ch: &token.Challenge{Target: "+8613800138000"}},
 		Payload: &factor.Payload{Code: "12ab56"},
 	}
 	res, err := f.Verify(ctx)
@@ -370,7 +393,7 @@ func TestVerifyEmailChannel(t *testing.T) {
 // TestStartResetUnverifiedTarget reset 前提校验（§2.4 行 465）：目标已绑定
 // 但未验证 → user_not_found（不写码、不发信）。
 func TestStartResetUnverifiedTarget(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
@@ -392,7 +415,7 @@ func TestStartResetUnverifiedTarget(t *testing.T) {
 
 // TestStartResetVerifiedTarget reset + 已绑定且已验证 → 正常发码（purpose=reset）。
 func TestStartResetVerifiedTarget(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	f, st, sender := newFactor(t, factor.FactorOTPSMS)
 	ctx := &factor.FactorContext{
 		Context: context.Background(),
@@ -512,7 +535,7 @@ func TestVerifyExhaustedIgnoresUpstreamAttemptsLeft(t *testing.T) {
 				Context: context.Background(),
 				Login: &token.LoginTokenPayload{
 					Tid: "sess-1", Flow: "login", Passed: []string{"password"},
-					Ch: &token.Challenge{Purpose: "login", Target: "13800000000"},
+					Ch: &token.Challenge{Purpose: "login", Target: "+8613800138000"},
 				},
 				Payload: &factor.Payload{Code: "123456"},
 				Users:   fakeUsers{byPhone: &model.User{ID: 7}},
@@ -555,7 +578,7 @@ func (s *ipLimitStore) Verify(context.Context, string, string, string, string) (
 // too_many_requests 且不再投递，不同 ip 不受累；store 收到的必须是
 // resolver 解析值而非 unknown 恒定桶。
 func TestStartIPDailyLimitCountsByIP(t *testing.T) {
-	phone := "13800000000"
+	phone := "+8613800138000"
 	st := &ipLimitStore{ipCounts: map[string]int{}, ipLimit: 2}
 	sender := &fakeSender{}
 	f, err := New(factor.FactorOTPSMS, core.NewService(st, core.DefaultConfig()), sender, ipres.Resolver{}, core.DefaultConfig())

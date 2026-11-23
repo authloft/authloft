@@ -9,17 +9,17 @@
  * 成 oidc.scope 子集（前端架构 §4.4），形态 B 提交时作为 selected_scope（§3.10）。
  * 锁定判定与勾选变换抽为纯函数（node 可测，无 DOM 交互依赖）。
  */
-import { t } from "../../shared/i18n";
-import styles from "./PermissionPanel.module.less";
+import { t } from '../../shared/i18n';
+import styles from './PermissionPanel.module.less';
 
 /** scope 封闭集六值（§4.2 行 1458）：展示顺序按此固定，不受注入串顺序影响。 */
 export const SCOPE_ORDER = [
-  "openid",
-  "profile",
-  "email",
-  "phone",
-  "phone_plain",
-  "email_plain",
+  'openid',
+  'profile',
+  'email',
+  'phone',
+  'phone_plain',
+  'email_plain',
 ] as const;
 
 /** 空格分隔的 scope 串 → 封闭集内的 token 列表（去重、按封闭集序、丢弃未支持值）。 */
@@ -28,7 +28,7 @@ export function scopeTokens(scope: string): string[] {
     scope
       .trim()
       .split(/\s+/)
-      .filter((part) => part !== ""),
+      .filter((part) => part !== ''),
   );
   return SCOPE_ORDER.filter((value) => parts.has(value));
 }
@@ -39,7 +39,7 @@ export function scopeTokens(scope: string): string[] {
  * 字段、形态 B 传空串——锁定逻辑完备，待注入补齐即可生效。
  */
 export function isScopeLocked(scope: string, grantedScopes: string): boolean {
-  return scope === "openid" || scopeTokens(grantedScopes).includes(scope);
+  return scope === 'openid' || scopeTokens(grantedScopes).includes(scope);
 }
 
 /** 初始勾选集：请求 scope 全员默认勾选（形态 A / B 的新请求项口径）。 */
@@ -122,13 +122,13 @@ function ScopeCheckbox({
         checked={checked}
         disabled={disabled || locked}
         data-scope={scope}
-        data-locked={locked ? "true" : "false"}
+        data-locked={locked ? 'true' : 'false'}
         onChange={onToggle}
       />
       <span className={styles.scopeLabel}>{t(`login.scope.${scope}`)}</span>
       {locked && (
         <span className={styles.lockedBadge}>
-          {t("login.consent.alwaysAuthorized")}
+          {t('login.consent.alwaysAuthorized')}
         </span>
       )}
     </label>
@@ -139,7 +139,7 @@ function ScopeCheckbox({
 export function PermissionPanel({
   clientName,
   scope,
-  grantedScopes = "",
+  grantedScopes = '',
   selected,
   onSelectedChange,
   disabled = false,
@@ -150,11 +150,11 @@ export function PermissionPanel({
     onSelectedChange(normalizeSelection(next, scope, grantedScopes));
   };
   return (
-    <section className={styles.panel} aria-label={t("login.consent.title")}>
+    <section className={styles.panel} aria-label={t('login.consent.title')}>
       <h2 className={styles.appName}>{clientName}</h2>
       {tokens.length === 0 ? (
         <p className={styles.empty}>
-          {t("login.consent.hint", { app: clientName })}
+          {t('login.consent.hint', { app: clientName })}
         </p>
       ) : (
         <ul className={styles.scopeList}>

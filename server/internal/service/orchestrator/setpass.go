@@ -16,6 +16,7 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
+	"authloft/internal/contact"
 	"authloft/internal/factor"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -157,6 +158,11 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	if target := p.GetCh().GetTarget(); target != "" {
 		switch kind {
 		case factor.FactorOTPSMS:
+			// 落库前自守 E.164（§1.11）：challenge 已在 otp 因子校验，此处
+			// 兜底防止构造的 login_token 携带裸号建出无法用 E.164 登录的账号。
+			if !contact.IsValidPhoneE164(target) {
+				return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
+			}
 			phone = target
 		case factor.FactorOTPEmail:
 			email = target

@@ -9,9 +9,13 @@ import { deriveRequestStatus } from './deriveRequestStatus';
 describe('deriveRequestStatus 真值表（§5.3）', () => {
   test('loading=true 一律 loading（error/data 已落地也不覆盖在途）', () => {
     expect(deriveRequestStatus(true, undefined, undefined)).toBe('loading');
-    expect(deriveRequestStatus(true, new Error('x'), undefined)).toBe('loading');
+    expect(deriveRequestStatus(true, new Error('x'), undefined)).toBe(
+      'loading',
+    );
     expect(deriveRequestStatus(true, undefined, { id: 1 })).toBe('loading');
-    expect(deriveRequestStatus(true, new Error('x'), { id: 1 })).toBe('loading');
+    expect(deriveRequestStatus(true, new Error('x'), { id: 1 })).toBe(
+      'loading',
+    );
   });
 
   test('非在途 + error 已落地 → error', () => {

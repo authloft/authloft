@@ -566,7 +566,7 @@ describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
     });
     const built = apiMod.buildBindChallengeRequest(
       'phone',
-      '13800138000',
+      '+8613800138000',
       captcha,
     );
     expect(built.ok).toBe(true);
@@ -578,7 +578,7 @@ describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
 
     expect(await captured.json()).toEqual({
       step: 'challenge',
-      payload: { phone: '13800138000' },
+      payload: { phone: '+8613800138000' },
       captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '1234' },
     });
   });
@@ -776,7 +776,7 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
 
   test('captcha 未就绪 → captcha_missing（§3.4 行 880 challenge 必过，不发包）', () => {
     expect(
-      apiMod.buildBindChallengeRequest('phone', '13800138000', undefined),
+      apiMod.buildBindChallengeRequest('phone', '+8613800138000', undefined),
     ).toEqual({
       ok: false,
       error: 'captcha_missing',
@@ -786,7 +786,7 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
   test('phone challenge 就绪：step / payload 透传（captcha 引用恒等）', () => {
     const built = apiMod.buildBindChallengeRequest(
       'phone',
-      '13800138000',
+      '+8613800138000',
       captcha,
     );
     expect(built.ok).toBe(true);
@@ -796,7 +796,7 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
     expect(built.request.$typeName).toBe('api.account.v1.BindPhoneRequest');
     const request = built.request as BindPhoneRequest;
     expect(request.step).toBe('challenge');
-    expect(request.payload?.phone).toBe('13800138000');
+    expect(request.payload?.phone).toBe('+8613800138000');
     expect(request.captcha).toBe(captcha);
   });
 
@@ -818,20 +818,20 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
 
   test('verify：非 6 位 / 非数字 → invalid_code；就绪回传相同 target + code（行 881-882）', () => {
     expect(
-      apiMod.buildBindVerifyRequest('phone', '13800138000', '12345'),
+      apiMod.buildBindVerifyRequest('phone', '+8613800138000', '12345'),
     ).toEqual({
       ok: false,
       error: 'invalid_code',
     });
     expect(
-      apiMod.buildBindVerifyRequest('phone', '13800138000', '12345a'),
+      apiMod.buildBindVerifyRequest('phone', '+8613800138000', '12345a'),
     ).toEqual({
       ok: false,
       error: 'invalid_code',
     });
     const built = apiMod.buildBindVerifyRequest(
       'phone',
-      '13800138000',
+      '+8613800138000',
       '123456',
     );
     expect(built.ok).toBe(true);
@@ -840,7 +840,7 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
     }
     const request = built.request as BindPhoneRequest;
     expect(request.step).toBe('verify');
-    expect(request.payload?.phone).toBe('13800138000');
+    expect(request.payload?.phone).toBe('+8613800138000');
     expect(request.payload?.code).toBe('123456');
   });
 });

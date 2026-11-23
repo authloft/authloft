@@ -24,6 +24,16 @@ export {
   type ControlKind,
 } from './FieldRenderer';
 export {
+  PhoneInput,
+  splitE164,
+  normalizeNational,
+  joinE164,
+  DIAL_CODES,
+  DEFAULT_DIAL_CODE,
+  type PhoneInputProps,
+  type DialCodeEntry,
+} from './PhoneInput';
+export {
   ErrorBanner,
   errorText,
   attemptsCount,

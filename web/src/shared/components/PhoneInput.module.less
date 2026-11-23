@@ -1,0 +1,28 @@
+// 手机号输入样式（docs/前端架构.md §1.7）：区号下拉与本地号输入拼接成一体，
+// 控件基线复用 controls.less 归集 mixin，零新增样式依赖。
+@import (reference) '../styles/tokens.less';
+@import (reference) '../styles/controls.less';
+
+.group {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.dialCode {
+  .control-input();
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 11rem;
+  padding: 0 0.5rem;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.national {
+  .control-input();
+  flex: 1 1 auto;
+  min-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}

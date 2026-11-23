@@ -1794,7 +1794,7 @@ func TestTestProviderHandler(t *testing.T) {
 
 // adminUserRow 用户族用例的 user 行（phone / email / 时间齐备）。
 func adminUserRow() *model.User {
-	phone, email := "13800138000", "alice@example.com"
+	phone, email := "+8613800138000", "alice@example.com"
 	now := time.Unix(1761700000, 0).UTC()
 	return &model.User{
 		ID: 42, Username: "alice", Nickname: "Alice", AvatarURL: "https://cdn.example.com/a.png",
@@ -1860,7 +1860,7 @@ func TestListUsersHandler(t *testing.T) {
 		t.Fatalf("响应 = (total=%d page=%d size=%d items=%d)", got.GetTotal(), got.GetPage(), got.GetPageSize(), len(got.GetItems()))
 	}
 	item := got.GetItems()[0]
-	if item.GetId() != 42 || item.GetUsername() != "alice" || item.GetPhone() != "13800138000" ||
+	if item.GetId() != 42 || item.GetUsername() != "alice" || item.GetPhone() != "+8613800138000" ||
 		item.GetEmail() != "alice@example.com" || item.GetUserStatus() != 1 || item.GetMfaRequired() != 1 {
 		t.Fatalf("列表项 = %+v", item)
 	}
@@ -1929,8 +1929,8 @@ func TestGetUserHandler(t *testing.T) {
 				t.Errorf("totp = (bound=%v boundAt=%d), want (true, %d)", f.GetBound(), f.GetBoundAt(), now.Unix())
 			}
 		case "otp_sms":
-			if !f.GetBound() || f.GetTarget() != "138****8000" {
-				t.Errorf("otp_sms = (bound=%v target=%q), want (true, 138****8000)", f.GetBound(), f.GetTarget())
+			if !f.GetBound() || f.GetTarget() != "+86****8000" {
+				t.Errorf("otp_sms = (bound=%v target=%q), want (true, +86****8000)", f.GetBound(), f.GetTarget())
 			}
 		case "otp_email":
 			if !f.GetBound() || f.GetTarget() != "a***@example.com" {

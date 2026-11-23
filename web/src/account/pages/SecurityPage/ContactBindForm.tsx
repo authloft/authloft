@@ -33,6 +33,7 @@ import {
   CodeInput,
   DEFAULT_CODE_LENGTH,
 } from '../../../shared/components/CodeInput';
+import { PhoneInput } from '../../../shared/components/PhoneInput';
 import {
   deriveRequestStatus,
   type RequestStatus,
@@ -202,17 +203,24 @@ export function ContactBindFormView(props: {
         >
           {kindLabel}
         </label>
-        <Input
-          id={`account-bind-${props.kind}-target`}
-          value={props.target}
-          onChange={props.onTargetChange}
-          placeholder={
-            props.kind === 'phone'
-              ? t('account.phonePlaceholder')
-              : t('account.emailPlaceholder')
-          }
-          disabled={challenging}
-        />
+        {props.kind === 'phone' ? (
+          // 手机号经共用组件录入：区号 + 本地号拼成 E.164 直接进 target。
+          <PhoneInput
+            id={`account-bind-${props.kind}-target`}
+            value={props.target}
+            onChange={props.onTargetChange}
+            placeholder={t('account.phonePlaceholder')}
+            disabled={challenging}
+          />
+        ) : (
+          <Input
+            id={`account-bind-${props.kind}-target`}
+            value={props.target}
+            onChange={props.onTargetChange}
+            placeholder={t('account.emailPlaceholder')}
+            disabled={challenging}
+          />
+        )}
       </div>
       {/* captcha 必过（§3.4 行 880）：提交即弹窗问凭据，窗内确认后发包。 */}
       {props.inputError !== undefined ? (

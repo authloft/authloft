@@ -153,7 +153,9 @@ export const account: typeof zhAccount = {
   'account.bindCurrentValue': 'Current: {value}',
   'account.bindCurrentVerified': 'Current: {value} (verified)',
   'account.bindResendCountdown': 'Resend available in {seconds}s',
-  'account.phonePlaceholder': 'Enter a phone number',
+  // Two-part input: the dial code is chosen in the left select, so the local
+  // number field must not ask for the country code again.
+  'account.phonePlaceholder': 'Enter a phone number (without country code)',
   'account.emailPlaceholder': 'Enter an email address',
   'account.sendCodeAction': 'Send code',
 

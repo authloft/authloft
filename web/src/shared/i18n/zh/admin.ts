@@ -319,39 +319,52 @@ export const admin = {
   // captcha 前端形态。各 provider 的 Schema() 按需声明后才会下发，
   // 未声明字段不下发（§5.3）。
   'admin.schemaField.teamIdLabel': 'Apple Team ID',
-  'admin.schemaField.teamIdHelp': 'Apple 开发者团队 ID，签发 client_secret（JWT iss）用',
+  'admin.schemaField.teamIdHelp':
+    'Apple 开发者团队 ID，签发 client_secret（JWT iss）用',
   'admin.schemaField.keyIdLabel': 'Apple Key ID',
-  'admin.schemaField.keyIdHelp': 'Apple 密钥 ID，签发 client_secret（JWT kid）用',
+  'admin.schemaField.keyIdHelp':
+    'Apple 密钥 ID，签发 client_secret（JWT kid）用',
   'admin.schemaField.agentIdLabel': '应用 AgentId',
-  'admin.schemaField.agentIdHelp': '企业微信应用 AgentId；snsapi_privateinfo 授权必填',
+  'admin.schemaField.agentIdHelp':
+    '企业微信应用 AgentId；snsapi_privateinfo 授权必填',
   'admin.schemaField.sdkAppIdLabel': 'SmsSdkAppId',
   'admin.schemaField.sdkAppIdHelp': '腾讯云短信 SDK AppID，每次发送必填',
   'admin.schemaField.accessKeyIdLabel': 'AccessKeyId',
-  'admin.schemaField.accessKeyIdHelp': '阿里云验证码 RPC 签名用；AccessKeySecret 填在密钥字段',
+  'admin.schemaField.accessKeyIdHelp':
+    '阿里云验证码 RPC 签名用；AccessKeySecret 填在密钥字段',
   'admin.schemaField.encryptKeyLabel': '加密密钥（ekey）',
-  'admin.schemaField.encryptKeyHelp': '加密模式专用，服务端据此生成 EncryptedSceneId（advanced）',
+  'admin.schemaField.encryptKeyHelp':
+    '加密模式专用，服务端据此生成 EncryptedSceneId（advanced）',
   'admin.schemaField.regionLabel': '地域',
-  'admin.schemaField.regionHelp': '腾讯云短信填 X-TC-Region 地域；阿里云验证码选 cn / sgp',
+  'admin.schemaField.regionHelp':
+    '腾讯云短信填 X-TC-Region 地域；阿里云验证码选 cn / sgp',
   'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
-  'admin.schemaField.messagingServiceSidHelp': 'MG 前缀；与发件号码（from）二选一',
+  'admin.schemaField.messagingServiceSidHelp':
+    'MG 前缀；与发件号码（from）二选一',
   'admin.schemaField.sandboxModeLabel': '沙箱模式',
   'admin.schemaField.sandboxModeHelp': '开启后返回成功但不真实发送，仅联调用',
   'admin.schemaField.replyToLabel': '回复地址',
   'admin.schemaField.replyToHelp': '邮件回复地址（reply_to.email）',
   'admin.schemaField.addressTypeLabel': '地址类型',
-  'admin.schemaField.addressTypeHelp': '阿里云邮件推送地址类型；0 = 随机账号，1 = 发信地址',
+  'admin.schemaField.addressTypeHelp':
+    '阿里云邮件推送地址类型；0 = 随机账号，1 = 发信地址',
   'admin.schemaField.replyToAddressLabel': '使用回信地址',
-  'admin.schemaField.replyToAddressHelp': '开启后回信到自定义回信地址；API 字符串取值构造期自动转换',
+  'admin.schemaField.replyToAddressHelp':
+    '开启后回信到自定义回信地址；API 字符串取值构造期自动转换',
   'admin.schemaField.replyAddressLabel': '回信地址',
-  'admin.schemaField.replyAddressHelp': '自定义回信地址；未启用控制台回信地址时填写',
+  'admin.schemaField.replyAddressHelp':
+    '自定义回信地址；未启用控制台回信地址时填写',
   'admin.schemaField.widgetApiBaseLabel': 'Capjs 服务根地址',
-  'admin.schemaField.widgetApiBaseHelp': '自托管服务根 URL；前端据此加载 widget 与 challenge/redeem',
+  'admin.schemaField.widgetApiBaseHelp':
+    '自托管服务根 URL；前端据此加载 widget 与 challenge/redeem',
   'admin.schemaField.widgetScriptUrlLabel': 'Widget 脚本地址',
-  'admin.schemaField.widgetScriptUrlHelp': '留空 = 官方 CDN；自托管时填服务根地址下 assets 脚本路径',
+  'admin.schemaField.widgetScriptUrlHelp':
+    '留空 = 官方 CDN；自托管时填服务根地址下 assets 脚本路径',
   'admin.schemaField.widgetProductLabel': '前端交互模式',
   'admin.schemaField.widgetProductHelp': 'GeeTest v4 交互模式，默认 bind',
   'admin.schemaField.widgetOptionsLabel': '前端初始化参数',
-  'admin.schemaField.widgetOptionsHelp': 'JSON 文本，原样透传前端初始化（如 language / mode），advanced',
+  'admin.schemaField.widgetOptionsHelp':
+    'JSON 文本，原样透传前端初始化（如 language / mode），advanced',
   'admin.schemaField.prefixLabel': '实例前缀（prefix）',
   'admin.schemaField.prefixHelp': '控制台实例信息卡获取，V3 前端初始化用',
 

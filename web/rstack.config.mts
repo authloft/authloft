@@ -2,6 +2,20 @@
 import { define } from 'rstack';
 import { globalIgnores } from '@rslint/core';
 
+// 仓库既有代码统一单引号，生成产物不参与格式化。缺此配置会把存量文件与
+// 生成产物全部判为未格式化（formatter 默认双引号）。
+define.fmt({
+  singleQuote: true,
+  ignorePatterns: ['src/gen/**'],
+  // 存量两文件整篇用双引号，沿用原口径避免机械改写大段无关代码。
+  overrides: [
+    {
+      files: ['src/shared/api/errors.ts', 'src/shared/api/errors.test.ts'],
+      options: { singleQuote: false },
+    },
+  ],
+});
+
 define.lint(({ js, ts }) => [
   globalIgnores(['**/gen/proto/**']),
   js.configs.recommended,

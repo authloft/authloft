@@ -26,16 +26,20 @@ describe('validateFormValues（required → email/phone 格式 → 验证码满�
 
   test('email / phone 格式未过 → 对应文案；非必填空值放行（服务端权威）', () => {
     expect(
-      validateFormValues(fields, { phone: '123', email: 'not-an-email' }).errors,
+      validateFormValues(fields, { phone: '123', email: 'not-an-email' })
+        .errors,
     ).toEqual({ phone: '手机号格式不正确', email: '邮箱格式不正确' });
     // 非必填空值放行。
     expect(
-      validateFormValues(fields, { phone: '13800000000', email: '' }).firstField,
+      validateFormValues(fields, { phone: '+8613800000000', email: '' })
+        .firstField,
     ).toBeUndefined();
   });
 
   test('otp / totp 满格校验（length 归一：缺省 / bigint 均按位数值）', () => {
-    const codeFields = [{ name: 'code', type: 'totp', required: true, length: BigInt(6) }];
+    const codeFields = [
+      { name: 'code', type: 'totp', required: true, length: BigInt(6) },
+    ];
     expect(validateFormValues(codeFields, { code: '123' }).errors).toEqual({
       code: '请输入完整验证码',
     });
@@ -46,7 +50,7 @@ describe('validateFormValues（required → email/phone 格式 → 验证码满�
 
   test('全过 → errors 空、firstField undefined', () => {
     const result = validateFormValues(fields, {
-      phone: '13800000000',
+      phone: '+8613800000000',
       email: 'a@b.com',
     });
     expect(result.errors).toEqual({});

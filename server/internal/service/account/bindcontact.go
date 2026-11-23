@@ -42,6 +42,7 @@ import (
 	"database/sql"
 
 	"authloft/internal/captcha"
+	"authloft/internal/contact"
 	"authloft/internal/eventlog"
 	core "authloft/internal/otp"
 	"authloft/internal/provider"
@@ -241,6 +242,15 @@ func (s *BindContactService) BindEmail(ctx context.Context, uid int64, in BindEm
 // bindContact 按 step 分派（§3.4 行 885；同一端点按 step 取用 payload 的
 // 一部分，challenge 用 {target, captcha}、verify 用 {target, code}）。
 func (s *BindContactService) bindContact(ctx context.Context, uid int64, kind bindContactKind, step, target string, sub *captcha.Submission, code, ip string) error {
+	// 手机号在分派前完成 E.164 校验与归一化（邮箱链路不受影响）：
+	// challenge / verify 两步必须用同一 target 形态，否则写码键与落库
+	// 查找会错位（§3.4）。内部的既定处理顺序保持不变。
+	if kind == bindContactPhone {
+		target = strings.TrimSpace(target)
+		if !contact.IsValidPhoneE164(target) {
+			return fmt.Errorf("%w: phone must be E.164", ErrBindInvalidRequest)
+		}
+	}
 	switch step {
 	case bindStepChallenge:
 		return s.bindChallenge(ctx, uid, kind, target, sub, ip)
@@ -439,8 +449,9 @@ func bindMaskTarget(kind bindContactKind, target string) string {
 }
 
 // bindMaskPhone 固定掩码：前 3 + "****" + 后 4；不足 8 位整体 "****"
-// （§3.1 行 813 格式；dto/account.go maskPhone 同构私有实现——后端架构
+// （§3.1；dto/account.go maskPhone 同构私有实现——后端架构
 // §3.5「各落一份」惯例，跨包私有不可复用，前后保留位与 dto 版一致）。
+// 注意：对 E.164 号码区号前缀与尾号仍可见，掩码语义不变。
 func bindMaskPhone(phone string) string {
 	if len(phone) <= 7 {
 		return "****"

@@ -42,8 +42,8 @@ export function usernameIssue(value: string): UsernameIssue {
 /** provider_key 规则（docs/前端架构.md §3.4）：^[a-z0-9_]+$。 */
 export const PROVIDER_KEY_PATTERN = /^[a-z0-9_]+$/;
 
-/** 中国大陆手机号（体验性预校验；§1.11 phone：仅格式体验校验，后端为唯一权威）。 */
-const PHONE_PATTERN = /^1[3-9]\d{9}$/;
+/** E.164 国际号码（体验性预校验；§1.11 phone：仅格式体验校验，后端为唯一权威）。 */
+const PHONE_PATTERN = /^\+[1-9]\d{1,14}$/;
 
 /** 邮箱（体验性预校验；§1.11 email：同上）。 */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

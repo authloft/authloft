@@ -5,7 +5,6 @@
  * （`{ itemKey, text }`），故落 `app-ui/` 而非 shared 根（§9 第 13 条：
  * login 禁引 Semi——本模块零运行时 Semi import，仅纯结构 + i18n）。
  */
-import { ComponentType } from 'react';
 import { t, type I18nKey } from '../i18n';
 
 /** 导航路由项（path 为 hash 内路径；textKey 渲染期经 t() 求值）。 */

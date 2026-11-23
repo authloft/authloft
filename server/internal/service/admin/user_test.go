@@ -520,7 +520,7 @@ func newUserSvc(perms ...*userFakePermissions) (*adminsvc.UserService, *userFake
 }
 
 func userTestRow() *model.User {
-	phone, email := "13800138000", "alice@example.com"
+	phone, email := "+8613800138000", "alice@example.com"
 	now := time.Unix(1761700000, 0).UTC()
 	return &model.User{
 		ID: 42, Username: "alice", Nickname: "Alice", AvatarURL: "https://cdn.example.com/a.png",
@@ -1120,7 +1120,7 @@ func TestUserServiceUnlockUser(t *testing.T) {
 		t.Fatalf("uid 维度 Reset = %v, want [42]", pwfail.resetRefs)
 	}
 	wantRefs := map[string]bool{}
-	for _, ident := range []string{"13800138000", "alice@example.com"} {
+	for _, ident := range []string{"+8613800138000", "alice@example.com"} {
 		sum := sha256.Sum256([]byte(ident))
 		wantRefs[hex.EncodeToString(sum[:])] = true
 	}
@@ -1504,14 +1504,14 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 	svc, users, _, _, _, _, epoch, _, audit := newUserSvc(perms)
 	users.user = userTestRow()
 	users.incNext = 9
-	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); err != nil {
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("+8613900001111")}); err != nil {
 		t.Fatalf("改手机号: %v", err)
 	}
 	if len(users.contactUpdated) != 1 {
 		t.Fatalf("列更新次数 = %d", len(users.contactUpdated))
 	}
 	up := users.contactUpdated[0]
-	if up.phone == nil || *up.phone != "13900001111" || up.email != nil || up.phoneV == nil || *up.phoneV != 1 || up.emailV != nil {
+	if up.phone == nil || *up.phone != "+8613900001111" || up.email != nil || up.phoneV == nil || *up.phoneV != 1 || up.emailV != nil {
 		t.Fatalf("列更新入参 = %+v（phone 写值 + phone_verified=1）", up)
 	}
 	if len(users.incIDs) != 1 || users.incIDs[0] != 42 || len(epoch.synced) != 1 || epoch.synced[0] != (userFakeSync{uid: 42, epoch: 9}) {
@@ -1521,7 +1521,7 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 		audit.events[0].UserID != 42 || audit.events[0].ActorID != 1 {
 		t.Fatalf("审计 = %+v", audit.events)
 	}
-	if strings.Contains(string(audit.events[0].Detail), "13900001111") {
+	if strings.Contains(string(audit.events[0].Detail), "+8613900001111") {
 		t.Fatalf("审计 detail 不得含联系方式明文: %q", audit.events[0].Detail)
 	}
 	var detail map[string]any
@@ -1547,11 +1547,11 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 		t.Fatalf("清空同样触发下线与审计: inc=%v audit=%d", users.incIDs, len(audit.events))
 	}
 
-	// 格式违规 → invalid_request 零写库零审计。
+	// 格式违规 → invalid_request 零写库零审计（裸号不兼容，只接受 E.164）。
 	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
 	users.user = userTestRow()
-	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("12345")}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
-		t.Fatalf("非法手机号应 ErrInvalidRequest, got %v", err)
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13800138000")}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("裸号应 ErrInvalidRequest, got %v", err)
 	}
 	if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(audit.events) != 0 {
 		t.Fatalf("格式违规零副作用: %+v inc=%v audit=%d", users.contactUpdated, users.incIDs, len(audit.events))
@@ -1560,8 +1560,8 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 	// 唯一冲突（预检命中他人）→ ErrTargetTaken，不写库、不下线、不审计。
 	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
 	users.user = userTestRow()
-	users.phoneHolders = map[string]*model.User{"13900001111": {ID: 7, Username: "bob"}}
-	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
+	users.phoneHolders = map[string]*model.User{"+8613900001111": {ID: 7, Username: "bob"}}
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("+8613900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
 		t.Fatalf("冲突应 ErrTargetTaken, got %v", err)
 	}
 	if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -1572,15 +1572,15 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
 	users.user = userTestRow()
 	users.contactErr = fmt.Errorf("user repo: update contact columns: %w: %w", repo.ErrUserDuplicate, errors.New("1062"))
-	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("+8613900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
 		t.Fatalf("TOCTOU 冲突应 ErrTargetTaken, got %v", err)
 	}
 
 	// 命中自己 = 原值重放，放行（幂等重写 + verified 置 1）。
 	svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
 	users.user = userTestRow()
-	users.phoneHolders = map[string]*model.User{"13800138000": userTestRow()}
-	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13800138000")}); err != nil {
+	users.phoneHolders = map[string]*model.User{"+8613800138000": userTestRow()}
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("+8613800138000")}); err != nil {
 		t.Fatalf("原值重放: %v", err)
 	}
 	if len(users.contactUpdated) != 1 || len(audit.events) != 1 {

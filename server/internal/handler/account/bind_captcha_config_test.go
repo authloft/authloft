@@ -172,7 +172,7 @@ var bindCaptchaEndpoints = []struct {
 	target    string
 	value     string
 }{
-	{"BindPhone", accountv1connect.AccountServiceBindPhoneProcedure, "phone", "13900008000"},
+	{"BindPhone", accountv1connect.AccountServiceBindPhoneProcedure, "phone", "+8613900008000"},
 	{"BindEmail", accountv1connect.AccountServiceBindEmailProcedure, "email", "new@example.com"},
 }
 

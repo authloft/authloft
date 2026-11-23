@@ -25,7 +25,9 @@ describe('setup/wizard validateRedisFields（host 必填 + port 1-65535，与 DB
 
   test('port 空 → port required', () => {
     expect(validateRedisFields('127.0.0.1', '')).toEqual({ port: 'required' });
-    expect(validateRedisFields('127.0.0.1', '  ')).toEqual({ port: 'required' });
+    expect(validateRedisFields('127.0.0.1', '  ')).toEqual({
+      port: 'required',
+    });
   });
 
   test('port 非数字 / 越界 → portInvalid（0 / 65536 / 字母）', () => {

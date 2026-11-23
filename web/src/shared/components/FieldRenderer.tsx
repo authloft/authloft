@@ -19,6 +19,7 @@ import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { toCount } from '../utils/int';
 import { t } from '../i18n';
 import { CodeInput, DEFAULT_CODE_LENGTH } from './CodeInput';
+import { PhoneInput } from './PhoneInput';
 import styles from './FieldRenderer.module.less';
 
 /** §1.11 的 12 种 type + 未知兜底 → 渲染控件形态。 */
@@ -172,7 +173,17 @@ function FieldControl({
       control = input('password');
       break;
     case 'tel':
-      control = input('tel', { inputMode: 'tel' });
+      // phone 类型经 controlKindFor 映射为 tel：区号 + 本地号两段录入，
+      // 对外仍是同一个 E.164 值，字段级错误态透传给两段控件。
+      control = (
+        <PhoneInput
+          value={value}
+          onChange={emit}
+          id={inputId}
+          ariaInvalid={hasError}
+          ariaDescribedBy={hasError ? errorId : undefined}
+        />
+      );
       break;
     case 'email':
       control = input('email', { inputMode: 'email' });
