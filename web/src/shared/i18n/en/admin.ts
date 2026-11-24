@@ -370,8 +370,7 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.encryptKeyHelp':
     'Encrypted mode only; the server derives EncryptedSceneId from it (advanced)',
   'admin.schemaField.regionLabel': 'Region',
-  'admin.schemaField.regionHelp':
-    'Tencent Cloud SMS takes the X-TC-Region region; Aliyun CAPTCHA picks cn (China) / sgp (Singapore) / ga (global acceleration)',
+  'admin.schemaField.regionHelp.tencentSMS': 'The X-TC-Region region',
   'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
   'admin.schemaField.messagingServiceSidHelp':
     'MG-prefixed; choose either this or the sender number (from)',
@@ -401,7 +400,7 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.widgetOptionsLabel': 'Frontend Init Options',
   'admin.schemaField.widgetOptionsHelp':
     'JSON text passed through to frontend init (e.g. language / mode), advanced',
-  'admin.schemaField.prefixLabel': 'Instance Prefix (prefix)',
+  'admin.schemaField.prefixLabel.aliyunCaptcha': 'Identity(prefix)',
   'admin.schemaField.prefixHelp':
     'From the console instance info card; used by the V3 frontend init',
 

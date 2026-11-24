@@ -336,8 +336,7 @@ export const admin = {
   'admin.schemaField.encryptKeyHelp':
     '加密模式专用，服务端据此生成 EncryptedSceneId（advanced）',
   'admin.schemaField.regionLabel': '地域',
-  'admin.schemaField.regionHelp':
-    '腾讯云短信填 X-TC-Region 地域；阿里云验证码选 cn（国内）/ sgp（新加坡）/ ga（全球加速）',
+  'admin.schemaField.regionHelp.tencentSMS': '填 X-TC-Region 地域',
   'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
   'admin.schemaField.messagingServiceSidHelp':
     'MG 前缀；与发件号码（from）二选一',
@@ -365,7 +364,7 @@ export const admin = {
   'admin.schemaField.widgetOptionsLabel': '前端初始化参数',
   'admin.schemaField.widgetOptionsHelp':
     'JSON 文本，原样透传前端初始化（如 language / mode），advanced',
-  'admin.schemaField.prefixLabel': '实例前缀（prefix）',
+  'admin.schemaField.prefixLabel.aliyunCaptcha': '身份标（prefix）',
   'admin.schemaField.prefixHelp': '控制台实例信息卡获取，V3 前端初始化用',
 
   // select options 显示名（options 仍是 wire 取值；键 =

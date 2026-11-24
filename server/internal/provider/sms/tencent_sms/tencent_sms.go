@@ -147,7 +147,7 @@ func schema() []provider.FieldMeta {
 		provider.FieldMeta{Key: "template_code", Label: "admin.schemaField.aliyunTemplateCodeLabel", Type: "text", Section: "credential", Required: true, Storage: provider.StorageExt},
 		// region 进 X-TC-Region 头并锁定发送地域；default 与 pattern 见 §15.5。
 		provider.FieldMeta{Key: "region", Label: "admin.schemaField.regionLabel", Type: "text", Section: "endpoint", Required: true,
-			Default: "ap-guangzhou", Pattern: "^[a-z]{2}-[a-z]+-[0-9]+$", Help: "admin.schemaField.regionHelp", Storage: provider.StorageExt},
+			Default: "ap-guangzhou", Pattern: "^[a-z]{2}-[a-z]+-[0-9]+$", Help: "admin.schemaField.regionHelp.tencentSMS", Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "intranet_endpoint", Label: "admin.schemaField.aliyunIntranetEndpointLabel", Type: "text", Section: "endpoint", Advanced: true, Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
 			Help: "admin.schemaField.aliyunMetadataHelp", Storage: provider.StorageExt},

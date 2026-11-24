@@ -2,7 +2,10 @@
   "private": true,
   "packageManager": "pnpm@11.3.0",
   "scripts": {
-    "postinstall": "rs hooks"
+    "postinstall": "rs hooks",
+    "run-server": "cd server && go run .",
+    "build-web": "cd web && npm run build",
+    "run-web": "cd web && npm run dev"
   },
   "devDependencies": {
     "@rslint/core": "0.9.5",
